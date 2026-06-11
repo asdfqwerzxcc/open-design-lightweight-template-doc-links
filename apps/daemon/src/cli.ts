@@ -4837,6 +4837,7 @@ async function runProject(args) {
   od project import <baseDir> [--name "<title>"]
   od project import-folder <path> [--name "<title>"] [--skill <id>]
                     [--design-system <id>] [--json]
+  od project promote-design-system <id> [--name "<title>"] [--json]
   od project list                         List projects.
   od project info <id>                    Print one project.
   od project delete <id>                  Delete a project.
@@ -5004,6 +5005,30 @@ Common options:
       const resp = await fetch(`${base}/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (!resp.ok) return structuredHttpFailure(resp, 'project-not-found');
       console.log(`[project] deleted ${id}`);
+      return;
+    }
+    case 'promote-design-system': {
+      const [id] = positionalArgs(rest, PROJECT_STRING_FLAGS);
+      if (!id) {
+        console.error('Usage: od project promote-design-system <id> [--name "<title>"] [--json]');
+        process.exit(2);
+      }
+      const body = {};
+      if (typeof flags.name === 'string' && flags.name.trim().length > 0) {
+        body.title = flags.name.trim();
+      }
+      const resp = await fetch(`${base}/api/projects/${encodeURIComponent(id)}/design-system-promotions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.clone().json().catch(() => ({}));
+      if (!resp.ok) return structuredHttpFailure(resp);
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`[project] promoted ${id} to ${data.designSystem?.id ?? '-'}`);
+      if (Array.isArray(data.warnings)) {
+        for (const warning of data.warnings) console.error(`WARN: ${warning}`);
+      }
       return;
     }
     case 'editors': {
@@ -6592,6 +6617,7 @@ async function runCraft(args)         { return runLibraryList('craft', args); }
 
 async function runDesignSystems(args) {
   if (args[0] === 'rename') return runDesignSystemRename(args.slice(1));
+  if (args[0] === 'export-static') return runDesignSystemExportStatic(args.slice(1));
   if (args[0] === 'import-local') return runDesignSystemImportLocal(args.slice(1));
   if (args[0] === 'import-github') return runDesignSystemImportGithub(args.slice(1));
   if (args[0] === 'import-shadcn') return runDesignSystemImportShadcn(args.slice(1));
@@ -6775,6 +6801,47 @@ Imports a shadcn registry item as an Open Design design system.
   }
   const body = designSystemImportRequestBody(flags, { reference });
   return postDesignSystemImport(flags, '/api/design-systems/import/shadcn', body);
+}
+
+async function runDesignSystemExportStatic(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  od design-systems export-static <id> [--out <path>] [--json] [--daemon-url <url>]
+
+Exports a design system as a standalone static HTML package.
+
+  <id>          Design-system id, e.g. user:acme-product.
+  --out <path>  Parent directory where the daemon creates a new export folder.`);
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'out']);
+  const flags = parseFlags(args, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
+  const id = positionalArgs(args, stringFlags)[0];
+  if (!id) {
+    console.error('Usage: od design-systems export-static <id> [--out <path>]');
+    process.exit(2);
+  }
+  const body = {};
+  if (typeof flags.out === 'string' && flags.out.trim().length > 0) {
+    body.outDir = flags.out;
+  }
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
+  const resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(id)}/exports/static-html`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) return structuredHttpFailure(resp);
+  const data = await resp.json();
+  if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+  const exported = data.export ?? data;
+  console.log(`Exported ${id}`);
+  console.log(`Folder: ${exported.folder ?? '(unknown)'}`);
+  console.log(`Entry: ${exported.entryFile ?? '(unknown)'}`);
+  const warnings = Array.isArray(exported.warnings) ? exported.warnings : [];
+  for (const warning of warnings) {
+    console.error(`WARN: ${warning}`);
+  }
 }
 
 // od design-systems rename <id> --title <new-title> [--json]

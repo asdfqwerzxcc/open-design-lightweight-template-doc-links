@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Button, Textarea } from '@open-design/components';
-import type { ConnectorConnectResponse, ConnectorDetail, ConnectorStatusResponse } from '@open-design/contracts';
+import type {
+  ConnectorConnectResponse,
+  ConnectorDetail,
+  ConnectorStatusResponse,
+  DesignSystemStaticHtmlExportResponse,
+} from '@open-design/contracts';
 import { streamViaDaemon } from '../providers/daemon';
 import {
   connectConnector,
   createDesignSystemDraft,
   disconnectConnector,
   ensureDesignSystemWorkspace,
+  exportDesignSystemStaticHtml,
   fetchDesignSystemGenerationJob,
   fetchDesignSystem,
   fetchConnectorStatuses,
@@ -965,6 +971,10 @@ export function DesignSystemDetailView({
   const [revisions, setRevisions] = useState<DesignSystemRevision[]>([]);
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, 'good' | 'work'>>({});
   const [tokenRebuildBusy, setTokenRebuildBusy] = useState(false);
+  const [staticExportBusy, setStaticExportBusy] = useState(false);
+  const [staticExportResult, setStaticExportResult] = useState<
+    DesignSystemStaticHtmlExportResponse['export'] | null
+  >(null);
   const [feedbackSection, setFeedbackSection] = useState<string | null>(null);
   const [chatSeed, setChatSeed] = useState<{ id: string; text: string } | null>(null);
   const [workspaceProjectId, setWorkspaceProjectId] = useState<string | null>(null);
@@ -999,6 +1009,8 @@ export function DesignSystemDetailView({
     setProjectChatMessages([]);
     setChatError(null);
     setChatSeed(null);
+    setStaticExportBusy(false);
+    setStaticExportResult(null);
     setWorkspaceTabsState({ tabs: [], active: null });
     setWorkspaceOpenRequest(null);
     openedProjectRef.current = null;
@@ -1836,6 +1848,24 @@ export function DesignSystemDetailView({
     }
   }
 
+  async function exportStaticHtmlPackage() {
+    if (!system || staticExportBusy) return;
+    setStaticExportBusy(true);
+    setStaticExportResult(null);
+    setStatusLine(null);
+    try {
+      const result = await exportDesignSystemStaticHtml(system.id);
+      if (!result) {
+        setStatusLine('Could not export HTML package');
+        return;
+      }
+      setStaticExportResult(result.export);
+      setStatusLine('HTML package exported');
+    } finally {
+      setStaticExportBusy(false);
+    }
+  }
+
   if (!system) {
     return (
       <div className="ds-setup-shell ds-setup-shell--center">
@@ -1962,6 +1992,15 @@ export function DesignSystemDetailView({
                   Make default
                 </Button>
               ) : null}
+              <Button
+                variant="ghost"
+                className="compact"
+                disabled={staticExportBusy}
+                onClick={() => void exportStaticHtmlPackage()}
+              >
+                <Icon name={staticExportBusy ? 'spinner' : 'download'} />
+                {staticExportBusy ? 'Exporting...' : 'Export HTML package'}
+              </Button>
             </div>
             <DesignSystemPackageCard
               system={system}
@@ -1981,6 +2020,13 @@ export function DesignSystemDetailView({
               </Button>
             </div>
             {statusLine ? <div className="ds-status-line">{statusLine}</div> : null}
+            {staticExportResult ? (
+              <div className="ds-status-line">
+                <strong>Folder:</strong> {staticExportResult.folder}
+                <br />
+                <strong>Entry:</strong> {staticExportResult.entryFile}
+              </div>
+            ) : null}
             <WorkspaceActivityCard message={workspaceActivityMessage} active={chatStreaming} />
             {pendingRevision ? (
               <RevisionDiffCard

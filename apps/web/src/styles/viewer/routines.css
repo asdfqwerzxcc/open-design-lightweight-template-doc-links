@@ -2552,6 +2552,16 @@
   flex: 0 1 auto;
   min-width: 0;
 }
+.project-ds-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.project-ds-control-group .project-ds-picker {
+  flex: 0 1 auto;
+}
 .project-ds-picker-trigger {
   display: inline-flex;
   align-items: center;
@@ -2581,6 +2591,42 @@
 .project-ds-picker-trigger:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.project-ds-promote-button {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 5px;
+  height: 22px;
+  min-width: 98px;
+  padding: 0 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.project-ds-promote-button:hover:not(:disabled) {
+  background: var(--bg-panel-strong, var(--bg-panel));
+  border-color: var(--border-strong, var(--border));
+}
+.project-ds-promote-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.project-ds-promote-button svg {
+  flex: 0 0 auto;
+}
+.project-ds-promote-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .project-ds-picker-label {
   overflow: hidden;

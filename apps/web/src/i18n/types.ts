@@ -958,6 +958,11 @@ export interface Dict {
   'handoff.notInstalled': string;
   'handoff.notDetectedTitle': string;
   'designSystemPicker.select': string;
+  'designSystemPicker.createDraftLabel': string;
+  'designSystemPicker.createDraftBusy': string;
+  'designSystemPicker.createDraftAria': string;
+  'designSystemPicker.createDraftBusyAria': string;
+  'designSystemPicker.createDraftTitle': string;
   'designSystemPicker.loading': string;
   'designSystemPicker.searchPlaceholder': string;
   'designSystemPicker.searchCompactPlaceholder': string;

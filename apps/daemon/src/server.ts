@@ -470,6 +470,8 @@ import { LiveArtifactRefreshAbortError } from './live-artifacts/refresh.js';
 import { registerConnectorRoutes } from './connectors/routes.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerDocumentBoxRoutes } from './routes/document-box.js';
+import { registerDesignSystemStaticExportRoutes } from './routes/design-system-static-export.js';
+import { registerProjectDesignSystemPromotionRoutes } from './routes/project-design-system-promotion.js';
 import { registerHostToolsRoutes } from './routes/host-tools.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
@@ -6222,6 +6224,11 @@ export async function startServer({
         return { decision: preparation.decision, job };
       },
     },
+  });
+  registerDesignSystemStaticExportRoutes(app, { paths: pathDeps });
+  registerProjectDesignSystemPromotionRoutes(app, {
+    paths: pathDeps,
+    getProject: (projectId) => getProject(db, projectId),
   });
   registerProjectArtifactRoutes(app, {
     http: httpDeps,

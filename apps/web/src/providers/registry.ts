@@ -6,6 +6,10 @@ import type {
   ConnectorDetailResponse,
   ConnectorListResponse,
   ConnectorStatusResponse,
+  DesignSystemStaticHtmlExportRequest,
+  DesignSystemStaticHtmlExportResponse,
+  PromoteProjectToDesignSystemRequest,
+  PromoteProjectToDesignSystemResponse,
   ImportGitHubDesignSystemRequest,
   ImportGitHubDesignSystemResponse,
   ImportShadcnDesignSystemRequest,
@@ -674,6 +678,40 @@ export async function startDesignSystemTokenContractRebuildJob(
     });
     if (!resp.ok) return null;
     return (await resp.json()) as DesignSystemTokenContractRebuildJobResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function exportDesignSystemStaticHtml(
+  id: string,
+  input: DesignSystemStaticHtmlExportRequest = {},
+): Promise<DesignSystemStaticHtmlExportResponse | null> {
+  try {
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/exports/static-html`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as DesignSystemStaticHtmlExportResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function promoteProjectToDesignSystem(
+  projectId: string,
+  input: PromoteProjectToDesignSystemRequest = {},
+): Promise<PromoteProjectToDesignSystemResponse | null> {
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/design-system-promotions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as PromoteProjectToDesignSystemResponse;
   } catch {
     return null;
   }

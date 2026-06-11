@@ -46,6 +46,7 @@ import {
   fetchLiveArtifacts,
   fetchProjectFiles,
   fetchSkill,
+  promoteProjectToDesignSystem,
   patchPreviewCommentStatus,
   projectRawUrl,
   uploadProjectFiles,
@@ -980,6 +981,7 @@ export function ProjectView({
     details: string | null;
     code?: string | null;
   } | null>(null);
+  const [promoteDesignSystemBusy, setPromoteDesignSystemBusy] = useState(false);
   const [chatSeed, setChatSeed] = useState<{ id: string; value: string } | null>(null);
   const [autoAuditRepairSeed, setAutoAuditRepairSeed] =
     useState<{ id: string; value: string } | null>(null);
@@ -4927,6 +4929,28 @@ export function ProjectView({
     [project, onProjectChange, designSystems, analytics.track],
   );
 
+  const handlePromoteToDesignSystem = useCallback(async () => {
+    if (promoteDesignSystemBusy) return;
+    setPromoteDesignSystemBusy(true);
+    setProjectActionsToast(null);
+    try {
+      const result = await promoteProjectToDesignSystem(project.id, {
+        title: `${project.name} Design System`,
+      });
+      if (!result) {
+        setProjectActionsToast({
+          message: 'Could not promote project to design system',
+          details: null,
+        });
+        return;
+      }
+      await onDesignSystemsRefresh?.();
+      navigate({ kind: 'design-system-detail', designSystemId: result.designSystem.id });
+    } finally {
+      setPromoteDesignSystemBusy(false);
+    }
+  }, [onDesignSystemsRefresh, project.id, project.name, promoteDesignSystemBusy]);
+
   const projectMeta = useMemo(() => {
     // Design system is rendered by the adjacent picker chip — keep the
     // bare meta string focused on skill / mode so the two surfaces
@@ -5719,11 +5743,32 @@ export function ProjectView({
                 </span>
               )}
               designSystemPicker={(
-                <DesignSystemPicker
-                  designSystems={designSystems}
-                  selectedId={project.designSystemId ?? null}
-                  onChange={handleChangeDesignSystemId}
-                />
+                <div className="project-ds-control-group" role="group" aria-label="Design system">
+                  <DesignSystemPicker
+                    designSystems={designSystems}
+                    selectedId={project.designSystemId ?? null}
+                    onChange={handleChangeDesignSystemId}
+                  />
+                  <button
+                    type="button"
+                    className="project-ds-promote-button"
+                    onClick={() => void handlePromoteToDesignSystem()}
+                    disabled={promoteDesignSystemBusy}
+                    aria-label={
+                      promoteDesignSystemBusy
+                        ? t('designSystemPicker.createDraftBusyAria')
+                        : t('designSystemPicker.createDraftAria')
+                    }
+                    title={t('designSystemPicker.createDraftTitle')}
+                  >
+                    <Icon name={promoteDesignSystemBusy ? 'spinner' : 'sparkles'} size={14} />
+                    <span>
+                      {promoteDesignSystemBusy
+                        ? t('designSystemPicker.createDraftBusy')
+                        : t('designSystemPicker.createDraftLabel')}
+                    </span>
+                  </button>
+                </div>
               )}
             />
           ) : (

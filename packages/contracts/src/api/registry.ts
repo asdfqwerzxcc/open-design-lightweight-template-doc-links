@@ -351,6 +351,34 @@ export interface DesignSystemResponse {
   designSystem: DesignSystemDetail;
 }
 
+export interface PromoteProjectToDesignSystemRequest {
+  title?: string;
+  summary?: string;
+  status?: 'draft' | 'published';
+}
+
+export interface PromoteProjectToDesignSystemResponse {
+  designSystem: DesignSystemDetail;
+  projectId: string;
+  sourceFiles: string[];
+  warnings: string[];
+}
+
+export interface DesignSystemStaticHtmlExportRequest {
+  outDir?: string;
+  includeSourceEvidence?: boolean;
+}
+
+export interface DesignSystemStaticHtmlExportResponse {
+  export: {
+    designSystemId: string;
+    folder: string;
+    entryFile: string;
+    files: string[];
+    warnings: string[];
+  };
+}
+
 export interface DesignSystemProvenance {
   companyBlurb?: string;
   githubUrls?: string[];
