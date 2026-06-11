@@ -38,6 +38,14 @@
       "types": "./dist/api/research.d.ts",
       "default": "./dist/api/research.mjs"
     },
+    "./api/templates": {
+      "types": "./dist/api/templates.d.ts",
+      "default": "./dist/api/templates.mjs"
+    },
+    "./api/document-box": {
+      "types": "./dist/api/document-box.d.ts",
+      "default": "./dist/api/document-box.mjs"
+    },
     "./design-systems/components-manifest": {
       "types": "./dist/design-systems/components-manifest.d.ts",
       "default": "./dist/design-systems/components-manifest.mjs"

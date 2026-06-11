@@ -12,6 +12,8 @@ await build({
     "./src/api/handoff.ts",
     "./src/api/providerModels.ts",
     "./src/api/research.ts",
+    "./src/api/templates.ts",
+    "./src/api/document-box.ts",
     "./src/design-systems/components-manifest.ts",
     "./src/design-systems/derived-token-outputs.ts",
     "./src/design-systems/token-schema.ts",

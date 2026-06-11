@@ -33,6 +33,7 @@ import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
 import { AmrLoginPill } from './AmrLoginPill';
+import { DocumentBoxPanel } from './DocumentBoxPanel';
 import {
   AMR_LOGIN_STATUS_EVENT,
   amrLoginStatusEventReason,
@@ -175,6 +176,7 @@ export type SettingsSection =
   | 'pet'
   | 'skills'
   | 'designSystems'
+  | 'documentBox'
   | 'projectLocations'
   | 'memory'
   | 'privacy'
@@ -2754,6 +2756,10 @@ export function SettingsDialog({
       title: t('settings.designSystems'),
       subtitle: t('settings.designSystemsHint'),
     },
+    documentBox: {
+      title: t('settings.documentBox'),
+      subtitle: t('settings.documentBoxHint'),
+    },
     projectLocations: {
       title: t('settings.projectLocations'),
       subtitle: t('settings.projectLocationsHint'),
@@ -3226,6 +3232,17 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.designSystems')}</strong>
                 <small>{t('settings.designSystemsHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'documentBox' ? ' active' : ''}`}
+              onClick={() => setActiveSection('documentBox')}
+            >
+              <Icon name="folder" size={18} />
+              <span>
+                <strong>{t('settings.documentBox')}</strong>
+                <small>{t('settings.documentBoxHint')}</small>
               </span>
             </button>
             <button
@@ -4542,6 +4559,8 @@ export function SettingsDialog({
               onDesignSystemImportRebuildJob={onDesignSystemImportRebuildJob}
             />
           ) : null}
+
+          {activeSection === 'documentBox' ? <DocumentBoxPanel /> : null}
 
           {activeSection === 'projectLocations' ? (
             <ProjectLocationsSection cfg={cfg} setCfg={setCfg} onProjectsRefresh={onProjectsRefresh} />

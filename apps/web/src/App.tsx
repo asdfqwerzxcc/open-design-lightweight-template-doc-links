@@ -2056,6 +2056,7 @@ function AppInner() {
         projects={projects}
         templates={templates}
         onDeleteTemplate={handleDeleteTemplate}
+        onTemplatesChanged={refreshTemplates}
         promptTemplates={promptTemplates}
         defaultDesignSystemId={config.designSystemId}
         agents={agents}

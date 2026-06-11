@@ -10,6 +10,16 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function commandArg(value: string): string {
+  if (process.platform !== 'win32') return shellQuote(value);
+  return `"${value.replaceAll('"', '\\"')}"`;
+}
+
+function envAssignment(name: string, value: string): string {
+  if (process.platform !== 'win32') return `${name}=${shellQuote(value)}`;
+  return `set "${name}=${value}"`;
+}
+
 export default defineConfig({
   testDir: './ui',
   outputDir: './ui/reports/test-results',
@@ -44,8 +54,8 @@ export default defineConfig({
   },
   webServer: {
     command:
-      `OD_DATA_DIR=${shellQuote(dataDir)} ` +
-      `pnpm --dir .. tools-dev run web --namespace ${shellQuote(namespace)} --daemon-port ${daemonPort} --web-port ${webPort}`,
+      `${envAssignment('OD_DATA_DIR', dataDir)} && ` +
+      `pnpm --dir .. tools-dev run web --namespace ${commandArg(namespace)} --daemon-port ${daemonPort} --web-port ${webPort}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

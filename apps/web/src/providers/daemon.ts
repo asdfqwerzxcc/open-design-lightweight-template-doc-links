@@ -1254,3 +1254,13 @@ export async function saveArtifact(
     return null;
   }
 }
+
+export {
+  createDocumentBoxLink,
+  createProjectFromTemplate,
+  importHtmlTemplate,
+  listDocumentBoxDocuments,
+  listDocumentBoxLinks,
+  revokeDocumentBoxLink,
+  uploadDocumentBoxDocument,
+} from './template-document-box';

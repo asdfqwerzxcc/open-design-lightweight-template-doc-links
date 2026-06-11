@@ -46,7 +46,8 @@ export type EntrySettingsSection =
   | 'library'
   | 'about'
   | 'memory'
-  | 'designSystems';
+  | 'designSystems'
+  | 'documentBox';
 
 const ENTRY_THEME_OPTIONS: Array<{
   value: AppTheme;

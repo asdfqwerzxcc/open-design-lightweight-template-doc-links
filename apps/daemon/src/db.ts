@@ -8,7 +8,13 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import type { ProjectBrowserWorkspaceTab, ProjectTabsState } from '@open-design/contracts';
+import type {
+  ProjectBrowserWorkspaceTab,
+  ProjectTabsState,
+  ProjectTemplateDesignSystem,
+  TemplateDerivationStatus,
+  TemplateSourceKind,
+} from '@open-design/contracts';
 import { migrateCritique } from './critique/persistence.js';
 import { migrateMediaTasks } from './media-tasks.js';
 import { migratePlugins } from './plugins/persistence.js';
@@ -70,7 +76,13 @@ function migrate(db: SqliteDb): void {
       description TEXT,
       source_project_id TEXT,
       files_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      source_kind TEXT NOT NULL DEFAULT 'project-snapshot',
+      html_source TEXT,
+      design_system_json TEXT,
+      derivation_status TEXT NOT NULL DEFAULT 'complete',
+      derivation_warnings_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS conversations (
@@ -309,6 +321,8 @@ function migrate(db: SqliteDb): void {
   if (!previewCommentCols.some((c: DbRow) => c.name === 'slide_index')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN slide_index INTEGER`);
   }
+  migrateTemplates(db);
+  migrateDocumentBox(db);
   migratePreviewCommentsSlideKey(db);
   const deploymentCols = db.prepare(`PRAGMA table_info(deployments)`).all() as DbRow[];
   if (!deploymentCols.some((c: DbRow) => c.name === 'status')) {
@@ -346,6 +360,63 @@ function migrate(db: SqliteDb): void {
   migrateCritique(db);
   migrateMediaTasks(db);
   migratePlugins(db);
+}
+
+function migrateTemplates(db: SqliteDb): void {
+  ensureColumn(db, 'templates', 'source_kind', `TEXT NOT NULL DEFAULT 'project-snapshot'`);
+  ensureColumn(db, 'templates', 'html_source', 'TEXT');
+  ensureColumn(db, 'templates', 'design_system_json', 'TEXT');
+  ensureColumn(db, 'templates', 'derivation_status', `TEXT NOT NULL DEFAULT 'complete'`);
+  ensureColumn(db, 'templates', 'derivation_warnings_json', 'TEXT');
+  ensureColumn(db, 'templates', 'updated_at', 'INTEGER');
+  db.exec(`
+    UPDATE templates
+       SET updated_at = created_at
+     WHERE updated_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_templates_source_created
+      ON templates(source_kind, created_at DESC);
+  `);
+}
+
+function migrateDocumentBox(db: SqliteDb): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_box_documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      stored_path TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS document_box_links (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER,
+      revoked_at INTEGER,
+      created_at INTEGER NOT NULL,
+      last_accessed_at INTEGER,
+      FOREIGN KEY(document_id) REFERENCES document_box_documents(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_box_documents_created
+      ON document_box_documents(deleted_at, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_document_box_links_document
+      ON document_box_links(document_id, created_at DESC);
+  `);
+}
+
+function ensureColumn(db: SqliteDb, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((item) => item.name === column)) return;
+  db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
 }
 
 function migratePreviewCommentsSlideKey(db: SqliteDb): void {
@@ -744,7 +815,11 @@ export function listTemplates(db: SqliteDb) {
   return (db
     .prepare(
       `SELECT id, name, description, source_project_id AS sourceProjectId,
-              files_json AS filesJson, created_at AS createdAt
+              files_json AS filesJson, source_kind AS sourceKind,
+              html_source AS htmlSource, design_system_json AS designSystemJson,
+              derivation_status AS derivationStatus,
+              derivation_warnings_json AS derivationWarningsJson,
+              created_at AS createdAt, updated_at AS updatedAt
          FROM templates
         ORDER BY created_at DESC`,
     )
@@ -756,7 +831,11 @@ export function getTemplate(db: SqliteDb, id: string) {
   const row = db
     .prepare(
       `SELECT id, name, description, source_project_id AS sourceProjectId,
-              files_json AS filesJson, created_at AS createdAt
+              files_json AS filesJson, source_kind AS sourceKind,
+              html_source AS htmlSource, design_system_json AS designSystemJson,
+              derivation_status AS derivationStatus,
+              derivation_warnings_json AS derivationWarningsJson,
+              created_at AS createdAt, updated_at AS updatedAt
          FROM templates WHERE id = ?`,
     )
     .get(id) as DbRow | undefined;
@@ -771,7 +850,11 @@ export function findTemplateByNameAndProject(
   const row = db
     .prepare(
       `SELECT id, name, description, source_project_id AS sourceProjectId,
-              files_json AS filesJson, created_at AS createdAt
+              files_json AS filesJson, source_kind AS sourceKind,
+              html_source AS htmlSource, design_system_json AS designSystemJson,
+              derivation_status AS derivationStatus,
+              derivation_warnings_json AS derivationWarningsJson,
+              created_at AS createdAt, updated_at AS updatedAt
          FROM templates
         WHERE name = ? AND source_project_id = ?`,
     )
@@ -781,15 +864,25 @@ export function findTemplateByNameAndProject(
 
 export function insertTemplate(db: SqliteDb, t: DbRow) {
   db.prepare(
-    `INSERT INTO templates (id, name, description, source_project_id, files_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO templates (
+       id, name, description, source_project_id, files_json, source_kind,
+       html_source, design_system_json, derivation_status,
+       derivation_warnings_json, created_at, updated_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     t.id,
     t.name,
     t.description ?? null,
     t.sourceProjectId ?? null,
     JSON.stringify(t.files ?? []),
+    t.sourceKind ?? 'project-snapshot',
+    t.htmlSource ?? null,
+    t.designSystem ? JSON.stringify(t.designSystem) : null,
+    t.derivationStatus ?? 'complete',
+    JSON.stringify(t.derivationWarnings ?? []),
     t.createdAt,
+    t.updatedAt ?? t.createdAt,
   );
   return getTemplate(db, t.id);
 }
@@ -816,14 +909,51 @@ function normalizeTemplate(row: DbRow) {
   } catch {
     files = [];
   }
+  const derivationWarnings = parseJsonArray(row.derivationWarningsJson);
+  const designSystem = parseJsonObject(row.designSystemJson) as ProjectTemplateDesignSystem | undefined;
   return {
     id: row.id,
     name: row.name,
     description: row.description ?? undefined,
     sourceProjectId: row.sourceProjectId ?? undefined,
     files,
+    sourceKind: normalizeTemplateSourceKind(row.sourceKind),
+    htmlSource: row.htmlSource ?? undefined,
+    designSystem,
+    derivationStatus: normalizeTemplateDerivationStatus(row.derivationStatus),
+    derivationWarnings,
     createdAt: Number(row.createdAt),
+    updatedAt: Number(row.updatedAt ?? row.createdAt),
   };
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value: unknown): JsonObject | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as JsonObject : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeTemplateSourceKind(value: unknown): TemplateSourceKind {
+  return value === 'html-import' ? 'html-import' : 'project-snapshot';
+}
+
+function normalizeTemplateDerivationStatus(value: unknown): TemplateDerivationStatus {
+  if (value === 'partial' || value === 'failed') return value;
+  return 'complete';
 }
 
 // ---------- conversations ----------

@@ -1,6 +1,6 @@
-import { rm } from 'node:fs/promises';
+import { readFile, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import type { Express, Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import {
   defaultScenarioPluginIdForProjectMetadata,
   type ChatSessionMode,
@@ -30,8 +30,36 @@ import {
   writeProjectManifest,
 } from './project-locations.js';
 import { auditDesignSystemPackage } from './tools-connectors-cli.js';
+import { deriveHtmlTemplateDesignSystem } from './templates/html-template-derivation.js';
 
-export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'validation'> {}
+export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'uploads' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'validation'> {}
+
+const MAX_TEMPLATE_HTML_BYTES = 2 * 1024 * 1024;
+const HTML_TEMPLATE_EXTENSIONS = new Set(['.html', '.htm']);
+
+class TemplateRouteError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+type TemplateFileSnapshot = {
+  readonly name: string;
+  readonly content: string;
+  readonly kind?: string;
+};
+
+type StoredTemplate = {
+  readonly id: string;
+  readonly name: string;
+  readonly sourceKind?: string;
+  readonly files?: readonly TemplateFileSnapshot[];
+};
 
 function projectDetailResolvedDir(
   projectsRoot: string,
@@ -754,8 +782,9 @@ function normalizeChatSessionMode(value: unknown): ChatSessionMode {
 
 export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
   const { db, design } = ctx;
-  const { sendApiError, createSseResponse } = ctx.http;
+  const { sendApiError, sendMulterError, createSseResponse } = ctx.http;
   const { DESIGN_SYSTEMS_DIR, PROJECTS_DIR, SKILLS_DIR } = ctx.paths;
+  const { upload } = ctx.uploads;
   const { readAppConfig, writeAppConfig } = ctx.appConfig;
   const { insertProject, validateLinkedDirs, getProject, updateProject, dbDeleteProject, removeProjectDir } = ctx.projectStore;
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
@@ -859,6 +888,141 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     const metadata = project?.metadata;
     return metadata?.importedFrom === 'project-location'
       || typeof metadata?.projectLocationId === 'string';
+  }
+
+  function templateHtmlFileName(value: unknown): string {
+    const candidate = typeof value === 'string' && value.trim() ? value.trim() : 'index.html';
+    const baseName = path.basename(candidate).replace(/[<>:"/\\|?*\x00-\x1F]/g, '-').trim();
+    const safeName = baseName && baseName !== '.' && baseName !== '..' ? baseName : 'index.html';
+    return path.extname(safeName) ? safeName : `${safeName}.html`;
+  }
+
+  function isHtmlTemplateFileName(fileName: string): boolean {
+    return HTML_TEMPLATE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+  }
+
+  function htmlByteLength(html: string): number {
+    return Buffer.byteLength(html, 'utf8');
+  }
+
+  function normalizeTemplateDescription(value: unknown): string | null {
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  async function removeUploadedTemplateFile(filePath: string): Promise<void> {
+    try {
+      await unlink(filePath);
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
+      throw err;
+    }
+  }
+
+  async function readTemplateHtmlFromBody(req: Request): Promise<{
+    html: string;
+    fileName: string;
+    sourceProjectId?: string;
+  } | { error: { status: number; code: string; message: string } }> {
+    if (req.file) {
+      const fileName = templateHtmlFileName(req.file.originalname);
+      if (!isHtmlTemplateFileName(fileName)) {
+        await removeUploadedTemplateFile(req.file.path);
+        return { error: { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'template upload must be .html or .htm' } };
+      }
+      const buffer = await readFile(req.file.path);
+      await removeUploadedTemplateFile(req.file.path);
+      const html = buffer.toString('utf8');
+      return { html, fileName };
+    }
+
+    const body = req.body || {};
+    if (typeof body.html === 'string') {
+      const fileName = templateHtmlFileName(body.fileName);
+      if (!isHtmlTemplateFileName(fileName)) {
+        return { error: { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'template fileName must be .html or .htm' } };
+      }
+      return { html: body.html, fileName };
+    }
+
+    if (typeof body.sourceProjectId === 'string' && typeof body.sourceFileName === 'string') {
+      const sourceProject = getProject(db, body.sourceProjectId);
+      if (!sourceProject) {
+        return { error: { status: 404, code: 'PROJECT_NOT_FOUND', message: 'source project not found' } };
+      }
+      const fileName = templateHtmlFileName(body.sourceFileName);
+      if (!isHtmlTemplateFileName(fileName)) {
+        return { error: { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE', message: 'source file must be .html or .htm' } };
+      }
+      try {
+        const entry = await readProjectFile(PROJECTS_DIR, body.sourceProjectId, body.sourceFileName, sourceProject.metadata);
+        return { html: entry.buffer.toString('utf8'), fileName, sourceProjectId: body.sourceProjectId };
+      } catch (err) {
+        if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+          return { error: { status: 404, code: 'PROJECT_NOT_FOUND', message: 'source file not found' } };
+        }
+        throw err;
+      }
+    }
+
+    return { error: { status: 400, code: 'BAD_REQUEST', message: 'html or sourceProjectId/sourceFileName required' } };
+  }
+
+  async function createProjectFromTemplate(
+    template: StoredTemplate,
+    reqBody: Record<string, unknown>,
+  ): Promise<{ project: unknown; conversationId: string }> {
+    const name = typeof reqBody.name === 'string' ? reqBody.name.trim() : '';
+    if (!name) {
+      throw new TemplateRouteError(400, 'BAD_REQUEST', 'name required');
+    }
+    if (name.length > 100) {
+      throw new TemplateRouteError(400, 'BAD_REQUEST', 'name must be 100 characters or fewer');
+    }
+    const designSystemValidation = await validateProjectDesignSystemId(reqBody.designSystemId);
+    if (!designSystemValidation.ok) {
+      throw new TemplateRouteError(400, designSystemValidation.code, designSystemValidation.message);
+    }
+    const id = randomId();
+    const now = Date.now();
+    const metadata = {
+      kind: 'template',
+      templateId: template.id,
+      templateLabel: template.name,
+      sourceKind: template.sourceKind ?? 'project-snapshot',
+    };
+    const project = insertProject(db, {
+      id,
+      name,
+      skillId: null,
+      designSystemId: designSystemValidation.id,
+      pendingPrompt: null,
+      metadata,
+      customInstructions: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const conversationId = randomId();
+    insertConversation(db, {
+      id: conversationId,
+      projectId: id,
+      title: null,
+      sessionMode: 'design',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ensureProject(PROJECTS_DIR, id, metadata);
+    for (const file of Array.isArray(template.files) ? template.files : []) {
+      if (!file || typeof file.name !== 'string' || typeof file.content !== 'string') continue;
+      await writeProjectFile(
+        PROJECTS_DIR,
+        id,
+        file.name,
+        Buffer.from(file.content, 'utf8'),
+        {},
+        metadata,
+      );
+    }
+    return { project, conversationId };
   }
 
   function projectVisibleForLocations(
@@ -1752,6 +1916,72 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     const t = getTemplate(db, req.params.id);
     if (!t) return res.status(404).json({ error: 'not found' });
     res.json({ template: t });
+  });
+
+  app.post(
+    '/api/templates/import-html',
+    (req, res, next) => {
+      upload.single('file')(req, res, (err: unknown) => {
+        if (err) return sendMulterError(res, err);
+        next();
+      });
+    },
+    async (req, res) => {
+      try {
+        const body = req.body || {};
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) {
+          return sendApiError(res, 400, 'BAD_REQUEST', 'name required');
+        }
+        if (name.length > 100) {
+          return sendApiError(res, 400, 'BAD_REQUEST', 'name must be 100 characters or fewer');
+        }
+        const parsed = await readTemplateHtmlFromBody(req);
+        if ('error' in parsed) {
+          return sendApiError(res, parsed.error.status, parsed.error.code, parsed.error.message);
+        }
+        if (htmlByteLength(parsed.html) > MAX_TEMPLATE_HTML_BYTES) {
+          return sendApiError(res, 413, 'PAYLOAD_TOO_LARGE', 'HTML template exceeds 2 MiB');
+        }
+        const designSystem = deriveHtmlTemplateDesignSystem({ html: parsed.html, name });
+        const now = Date.now();
+        const template = insertTemplate(db, {
+          id: randomId(),
+          name,
+          description: normalizeTemplateDescription(body.description),
+          sourceProjectId: parsed.sourceProjectId,
+          sourceKind: 'html-import',
+          files: [{ name: parsed.fileName, content: parsed.html, kind: 'html' }],
+          htmlSource: parsed.html,
+          designSystem,
+          derivationStatus: designSystem.extractionWarnings.length > 0 ? 'partial' : 'complete',
+          derivationWarnings: designSystem.extractionWarnings,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return res.status(201).json({ template });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return sendApiError(res, 400, 'BAD_REQUEST', message);
+      }
+    },
+  );
+
+  app.post('/api/templates/:id/create-project', async (req, res) => {
+    try {
+      const template = getTemplate(db, req.params.id);
+      if (!template) {
+        return sendApiError(res, 404, 'TEMPLATE_NOT_FOUND', 'template not found');
+      }
+      const created = await createProjectFromTemplate(template, req.body || {});
+      return res.status(201).json(created);
+    } catch (err) {
+      if (err instanceof TemplateRouteError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return sendApiError(res, 400, 'BAD_REQUEST', message);
+    }
   });
 
   app.post('/api/templates', async (req, res) => {

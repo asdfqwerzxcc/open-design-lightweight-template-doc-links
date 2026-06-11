@@ -35,6 +35,8 @@ interface Props {
   defaultDesignSystemId: string | null;
   templates: ProjectTemplate[];
   onDeleteTemplate?: (id: string) => Promise<boolean>;
+  onTemplatesChanged?: () => Promise<void> | void;
+  onTemplateProjectCreated?: (projectId: string) => void;
   promptTemplates: PromptTemplateSummary[];
   mediaProviders?: Record<string, MediaProviderCredentials>;
   connectors?: ConnectorDetail[];
@@ -72,6 +74,8 @@ function NewProjectModalBody({
   defaultDesignSystemId,
   templates,
   onDeleteTemplate,
+  onTemplatesChanged,
+  onTemplateProjectCreated,
   promptTemplates,
   mediaProviders,
   connectors,
@@ -170,6 +174,8 @@ function NewProjectModalBody({
             defaultDesignSystemId={defaultDesignSystemId}
             templates={templates}
             {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
+            {...(onTemplatesChanged ? { onTemplatesChanged } : {})}
+            {...(onTemplateProjectCreated ? { onTemplateProjectCreated } : {})}
             promptTemplates={promptTemplates}
             {...(mediaProviders ? { mediaProviders } : {})}
             {...(connectors ? { connectors } : {})}

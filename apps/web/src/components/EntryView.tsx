@@ -51,6 +51,7 @@ interface Props {
   projects: Project[];
   templates: ProjectTemplate[];
   onDeleteTemplate: (id: string) => Promise<boolean>;
+  onTemplatesChanged?: () => Promise<void> | void;
   promptTemplates: PromptTemplateSummary[];
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
@@ -115,7 +116,7 @@ interface Props {
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
   onPersistComposioKey: (composio: AppConfig['composio']) => Promise<void> | void;
-  onOpenSettings: (section?: 'execution' | 'media' | 'composio' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
+  onOpenSettings: (section?: 'execution' | 'media' | 'composio' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems' | 'documentBox') => void;
   onCompleteOnboarding: () => void;
 }
 
@@ -219,6 +220,7 @@ export function EntryView({
   projects,
   templates,
   onDeleteTemplate,
+  onTemplatesChanged,
   promptTemplates,
   defaultDesignSystemId,
   agents,
@@ -330,6 +332,7 @@ export function EntryView({
       projects={projects}
       templates={templates}
       onDeleteTemplate={onDeleteTemplate}
+      {...(onTemplatesChanged ? { onTemplatesChanged } : {})}
       promptTemplates={promptTemplates}
       defaultDesignSystemId={defaultDesignSystemId}
       connectors={connectors}

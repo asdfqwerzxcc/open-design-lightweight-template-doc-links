@@ -53,6 +53,7 @@ import {
   useAIHubMixAudioModels,
 } from '../media/aihubmix-image-models';
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
+import { HtmlTemplateImport } from './HtmlTemplateImport';
 import { Icon } from './Icon';
 import { Skeleton } from './Loading';
 import { Toast } from './Toast';
@@ -130,6 +131,8 @@ interface Props {
   defaultDesignSystemId: string | null;
   templates: ProjectTemplate[];
   onDeleteTemplate?: (id: string) => Promise<boolean>;
+  onTemplatesChanged?: () => Promise<void> | void;
+  onTemplateProjectCreated?: (projectId: string) => void;
   promptTemplates: PromptTemplateSummary[];
   onCreate: (input: CreateInput & { requestId?: string }) => void;
   onImportClaudeDesign?: (
@@ -255,6 +258,8 @@ export function NewProjectPanel({
   defaultDesignSystemId,
   templates,
   onDeleteTemplate,
+  onTemplatesChanged,
+  onTemplateProjectCreated,
   promptTemplates,
   onCreate,
   onImportClaudeDesign,
@@ -967,6 +972,12 @@ export function NewProjectPanel({
               value={templateId}
               onChange={setTemplateId}
               onDelete={onDeleteTemplate}
+            />
+            <HtmlTemplateImport
+              onImported={() => {
+                void onTemplatesChanged?.();
+              }}
+              onCreatedProject={onTemplateProjectCreated}
             />
             <ToggleRow
               label={t('newproj.toggleAnimations')}

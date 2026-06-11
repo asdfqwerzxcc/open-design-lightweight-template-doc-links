@@ -4,6 +4,7 @@ out/
 .next/
 .next-*/
 .tmp/
+.omo/
 .DS_Store
 *.log
 /OpenDesign.exe
@@ -80,4 +81,5 @@ apps/landing-page/public/previews/
 # Ad-hoc local e2e scripts and their screenshots
 e2e/scripts/test-fal-webui.ts
 e2e/scripts/fal-webui-*.png
+e2e/ui/*.temp.test.ts
 growth/**

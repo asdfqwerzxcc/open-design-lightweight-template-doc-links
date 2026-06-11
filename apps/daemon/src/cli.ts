@@ -189,9 +189,13 @@ const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
 // external agents (hermes-agent, openclaw, ...) can snapshot, list, or
 // remove user-saved project templates without going through the web UI.
 const TEMPLATES_STRING_FLAGS = new Set([
-  'daemon-url', 'name', 'description',
+  'daemon-url', 'name', 'description', 'input', 'design-system',
 ]);
 const TEMPLATES_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
+const DOCUMENT_BOX_STRING_FLAGS = new Set([
+  'daemon-url', 'file', 'title', 'expires-at',
+]);
+const DOCUMENT_BOX_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // `od automation …` mirrors the Automations tab. Same surface, same
 // /api/routines store. The CLI form is the embeddability contract:
 // external agents (hermes-agent, openclaw, etc.) can drive Open Design
@@ -267,6 +271,7 @@ const SUBCOMMAND_MAP = {
   run: runRun,
   files: runFiles,
   templates: runTemplates,
+  'document-box': runDocumentBox,
   conversation: runConversation,
   chat: runChat,
   daemon: runDaemon,
@@ -5694,6 +5699,10 @@ async function runTemplates(args) {
   od templates save  <projectId> --name <name>      Snapshot a project's current
                                                     files as a new template.
                      [--description <text>]
+  od templates import-html --input <path|-> --name <name>
+                     [--description <text>]
+  od templates create-project <templateId> --name <projectName>
+                     [--design-system <id>]
   od templates delete <id>                          Delete a saved template by id.
 
 Common options:
@@ -5809,6 +5818,78 @@ Common options:
       console.log(`[templates] saved ${savedName}${id ? ` (${id})` : ''}`);
       return;
     }
+    case 'import-html': {
+      const input = typeof flags.input === 'string' ? flags.input : '';
+      const name = typeof flags.name === 'string' ? flags.name.trim() : '';
+      if (!input || !name) {
+        console.error('Usage: od templates import-html --input <path|-> --name <name> [--description <text>]');
+        process.exit(2);
+      }
+      const [{ readFile }, fs, { basename }] = await Promise.all([
+        import('node:fs/promises'),
+        import('node:fs'),
+        import('node:path'),
+      ]);
+      const html = input === '-' ? fs.readFileSync(0, 'utf8') : await readFile(input, 'utf8');
+      const body = { name, html };
+      if (input !== '-') body.fileName = basename(input);
+      if (typeof flags.description === 'string' && flags.description.length > 0) {
+        body.description = flags.description;
+      }
+      let resp;
+      try {
+        resp = await fetch(`${base}/api/templates/import-html`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        surfaceFetchError(err, base);
+        process.exit(3);
+      }
+      if (!resp.ok) {
+        if (resp.status === 400) return structuredHttpFailure(resp, 'missing-input');
+        return structuredHttpFailure(resp);
+      }
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      const id = data?.template?.id ?? '';
+      const importedName = data?.template?.name ?? name;
+      console.log(`[templates] imported ${importedName}${id ? ` (${id})` : ''}`);
+      return;
+    }
+    case 'create-project': {
+      const templateId = positionalArgs(rest)[0] ?? '';
+      const name = typeof flags.name === 'string' ? flags.name.trim() : '';
+      if (!templateId || !name) {
+        console.error('Usage: od templates create-project <templateId> --name <projectName> [--design-system <id>]');
+        process.exit(2);
+      }
+      const body = { name };
+      if (typeof flags['design-system'] === 'string' && flags['design-system']) {
+        body.designSystemId = flags['design-system'];
+      }
+      let resp;
+      try {
+        resp = await fetch(`${base}/api/templates/${encodeURIComponent(templateId)}/create-project`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        surfaceFetchError(err, base);
+        process.exit(3);
+      }
+      if (!resp.ok) {
+        if (resp.status === 400) return structuredHttpFailure(resp, 'missing-input');
+        if (resp.status === 404) return structuredHttpFailure(resp, 'project-not-found');
+        return structuredHttpFailure(resp);
+      }
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`[templates] created project ${data?.project?.id ?? '-'} from ${templateId}`);
+      return;
+    }
     case 'delete': {
       const id = positionalArgs(rest)[0] ?? '';
       if (!id) {
@@ -5840,6 +5921,153 @@ Common options:
       console.error(`unknown subcommand: od templates ${sub}`);
       process.exit(2);
   }
+}
+
+async function runDocumentBox(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  od document-box list [--json]
+  od document-box add --file <path> [--title <title>] [--json]
+  od document-box link create <documentId> [--expires-at <iso>] [--json]
+  od document-box link revoke <linkId> [--json]
+
+Common options:
+  --daemon-url <url>   Open Design daemon HTTP base.
+  --json               Emit raw JSON.`);
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  const sub = args[0];
+  const rest = args.slice(1);
+  let flags;
+  try {
+    flags = parseFlags(rest, { string: DOCUMENT_BOX_STRING_FLAGS, boolean: DOCUMENT_BOX_BOOLEAN_FLAGS });
+  } catch (err) {
+    console.error(err.message);
+    process.exit(2);
+  }
+  const base = await cliDaemonBaseUrl(flags);
+  const parts = positionalArgs(rest, DOCUMENT_BOX_STRING_FLAGS);
+
+  if (sub === 'list') {
+    let resp;
+    try {
+      resp = await fetch(`${base}/api/document-box/documents`);
+    } catch (err) {
+      surfaceFetchError(err, base);
+      process.exit(3);
+    }
+    if (!resp.ok) return structuredHttpFailure(resp);
+    const data = await resp.json();
+    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    const documents = Array.isArray(data?.documents) ? data.documents : [];
+    if (documents.length === 0) {
+      console.log('No documents. Add one with `od document-box add --file <path>`.');
+      return;
+    }
+    for (const document of documents) {
+      console.log(`${document.id}\t${document.title ?? document.fileName}`);
+    }
+    return;
+  }
+
+  if (sub === 'add') {
+    const filePath = typeof flags.file === 'string' ? flags.file : '';
+    if (!filePath) {
+      console.error('Usage: od document-box add --file <path> [--title <title>]');
+      process.exit(2);
+    }
+    const [{ readFile }, { basename }] = await Promise.all([
+      import('node:fs/promises'),
+      import('node:path'),
+    ]);
+    const content = await readFile(filePath);
+    const form = new FormData();
+    form.set('file', new File([content], basename(filePath)));
+    if (typeof flags.title === 'string' && flags.title) form.set('title', flags.title);
+    let resp;
+    try {
+      resp = await fetch(`${base}/api/document-box/documents`, { method: 'POST', body: form });
+    } catch (err) {
+      surfaceFetchError(err, base);
+      process.exit(3);
+    }
+    if (!resp.ok) {
+      if (resp.status === 400) return structuredHttpFailure(resp, 'missing-input');
+      return structuredHttpFailure(resp);
+    }
+    const data = await resp.json();
+    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+    const document = data?.document ?? {};
+    console.log(`[document-box] added ${document.title ?? document.fileName ?? filePath}${document.id ? ` (${document.id})` : ''}`);
+    return;
+  }
+
+  if (sub === 'link') {
+    const action = parts[0] ?? '';
+    if (action === 'create') {
+      const documentId = parts[1] ?? '';
+      if (!documentId) {
+        console.error('Usage: od document-box link create <documentId> [--expires-at <iso>]');
+        process.exit(2);
+      }
+      const body = {};
+      if (typeof flags['expires-at'] === 'string' && flags['expires-at']) {
+        const expiresAt = Date.parse(flags['expires-at']);
+        if (!Number.isFinite(expiresAt)) {
+          console.error('--expires-at must be an ISO timestamp');
+          process.exit(2);
+        }
+        body.expiresAt = expiresAt;
+      }
+      let resp;
+      try {
+        resp = await fetch(`${base}/api/document-box/documents/${encodeURIComponent(documentId)}/links`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        surfaceFetchError(err, base);
+        process.exit(3);
+      }
+      if (!resp.ok) {
+        if (resp.status === 404) return structuredHttpFailure(resp, 'project-not-found');
+        if (resp.status === 400) return structuredHttpFailure(resp, 'missing-input');
+        return structuredHttpFailure(resp);
+      }
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`[document-box] link ${data?.link?.tokenUrl ?? ''}`);
+      return;
+    }
+    if (action === 'revoke') {
+      const linkId = parts[1] ?? '';
+      if (!linkId) {
+        console.error('Usage: od document-box link revoke <linkId>');
+        process.exit(2);
+      }
+      let resp;
+      try {
+        resp = await fetch(`${base}/api/document-box/links/${encodeURIComponent(linkId)}/revoke`, { method: 'POST' });
+      } catch (err) {
+        surfaceFetchError(err, base);
+        process.exit(3);
+      }
+      if (!resp.ok) {
+        if (resp.status === 404) return structuredHttpFailure(resp, 'project-not-found');
+        return structuredHttpFailure(resp);
+      }
+      if (flags.json) {
+        const data = await resp.json().catch(() => ({ ok: true }));
+        return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      }
+      console.log(`[document-box] revoked ${linkId}`);
+      return;
+    }
+  }
+
+  console.error(`unknown subcommand: od document-box ${[sub, ...parts].filter(Boolean).join(' ')}`);
+  process.exit(2);
 }
 
 async function runConversation(args) {

@@ -10,9 +10,10 @@
 // flags, and the right HTTP call is emitted for each sub-verb.
 
 import http from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve as pathResolve } from 'node:path';
+import { dirname, join, resolve as pathResolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -83,13 +84,41 @@ async function startStubServer(): Promise<StubServer> {
 
 async function runCli(
   args: string[],
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; input?: string } = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...options.env,
   };
   delete env.NODE_OPTIONS;
+  if (options.input !== undefined) {
+    return await new Promise((resolveRun) => {
+      const child = spawn(process.execPath, [TSX_CLI, CLI_SRC, ...args], {
+        cwd: DAEMON_ROOT,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        child.kill();
+        resolveRun({ stdout, stderr, code: 1 });
+      }, 15_000);
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+      child.on('close', (code) => {
+        clearTimeout(timeout);
+        resolveRun({ stdout, stderr, code });
+      });
+      child.stdin.end(options.input);
+    });
+  }
   try {
     const { stdout, stderr } = await execFileP(
       process.execPath,
@@ -499,5 +528,105 @@ describe('od templates CLI', () => {
     const envelope = JSON.parse(result.stderr.trim());
     expect(envelope.error.code).toBe('missing-input');
     expect(envelope.error.message).toBe('name required');
+  });
+
+  it('imports HTML from a file through POST /api/templates/import-html', async () => {
+    const tempDir = await mkdtemp('od-cli-template-');
+    const input = join(tempDir, 'input.html');
+    await writeFile(input, '<!doctype html><title>CLI</title><h1>CLI</h1>', 'utf8');
+    try {
+      stub.setResponder((req) => {
+        if (req.method === 'POST' && req.url === '/api/templates/import-html') {
+          return { status: 201, body: { template: { id: 'tpl_cli', name: 'CLI', sourceKind: 'html-import' } } };
+        }
+        return { status: 404, body: { error: 'unexpected' } };
+      });
+
+      const result = await runCli([
+        'templates',
+        'import-html',
+        '--input',
+        input,
+        '--name',
+        'CLI',
+        '--description',
+        'From CLI',
+        '--daemon-url',
+        stub.baseUrl,
+      ]);
+
+      expect(result.code).toBe(0);
+      expect(stub.requests).toHaveLength(1);
+      expect(stub.requests[0]?.method).toBe('POST');
+      expect(stub.requests[0]?.url).toBe('/api/templates/import-html');
+      expect(JSON.parse(stub.requests[0]?.body ?? '{}')).toEqual({
+        name: 'CLI',
+        description: 'From CLI',
+        html: '<!doctype html><title>CLI</title><h1>CLI</h1>',
+        fileName: 'input.html',
+      });
+      expect(result.stdout).toContain('[templates] imported CLI (tpl_cli)');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('imports HTML from stdin through POST /api/templates/import-html', async () => {
+    stub.setResponder((req) => {
+      if (req.method === 'POST' && req.url === '/api/templates/import-html') {
+        return { status: 201, body: { template: { id: 'tpl_stdin', name: 'CLI Stdin', sourceKind: 'html-import' } } };
+      }
+      return { status: 404, body: { error: 'unexpected' } };
+    });
+
+    const result = await runCli([
+      'templates',
+      'import-html',
+      '--input',
+      '-',
+      '--name',
+      'CLI Stdin',
+      '--daemon-url',
+      stub.baseUrl,
+      '--json',
+    ], { input: '<!doctype html><title>CLI Stdin</title>' });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(stub.requests[0]?.body ?? '{}')).toEqual({
+      name: 'CLI Stdin',
+      html: '<!doctype html><title>CLI Stdin</title>',
+    });
+    expect(JSON.parse(result.stdout).template.id).toBe('tpl_stdin');
+  });
+
+  it('creates a Project from a template through POST /api/templates/:id/create-project', async () => {
+    stub.setResponder((req) => {
+      if (req.method === 'POST' && req.url === '/api/templates/tpl_cli/create-project') {
+        return { status: 201, body: { project: { id: 'project_cli', name: 'CLI Project' } } };
+      }
+      return { status: 404, body: { error: 'unexpected' } };
+    });
+
+    const result = await runCli([
+      'templates',
+      'create-project',
+      'tpl_cli',
+      '--name',
+      'CLI Project',
+      '--design-system',
+      'ds_cli',
+      '--daemon-url',
+      stub.baseUrl,
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(stub.requests).toHaveLength(1);
+    expect(stub.requests[0]?.method).toBe('POST');
+    expect(stub.requests[0]?.url).toBe('/api/templates/tpl_cli/create-project');
+    expect(JSON.parse(stub.requests[0]?.body ?? '{}')).toEqual({
+      name: 'CLI Project',
+      designSystemId: 'ds_cli',
+    });
+    expect(result.stdout).toContain('[templates] created project project_cli from tpl_cli');
   });
 });

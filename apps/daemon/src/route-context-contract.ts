@@ -2,6 +2,7 @@ import type { ServerContext } from './server-context.js';
 import type { RegisterActiveContextRoutesDeps } from './routes/active-context.js';
 import type { RegisterChatRoutesDeps } from './chat-routes.js';
 import type { RegisterDeployRoutesDeps, RegisterDeploymentCheckRoutesDeps } from './routes/deploy.js';
+import type { RegisterDocumentBoxRoutesDeps } from './routes/document-box.js';
 import type { RegisterFinalizeRoutesDeps, RegisterImportRoutesDeps, RegisterProjectExportRoutesDeps } from './import-export-routes.js';
 import type { RegisterHandoffRoutesDeps } from './routes/handoff.js';
 import type { RegisterHostToolsRoutesDeps } from './routes/host-tools.js';
@@ -19,6 +20,7 @@ type AllRegisteredRouteDeps =
   & RegisterChatRoutesDeps
   & RegisterDeployRoutesDeps
   & RegisterDeploymentCheckRoutesDeps
+  & RegisterDocumentBoxRoutesDeps
   & RegisterFinalizeRoutesDeps
   & RegisterHandoffRoutesDeps
   & RegisterHostToolsRoutesDeps

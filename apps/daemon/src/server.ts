@@ -469,6 +469,7 @@ import { LiveArtifactRefreshUnavailableError, refreshLiveArtifact } from './live
 import { LiveArtifactRefreshAbortError } from './live-artifacts/refresh.js';
 import { registerConnectorRoutes } from './connectors/routes.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
+import { registerDocumentBoxRoutes } from './routes/document-box.js';
 import { registerHostToolsRoutes } from './routes/host-tools.js';
 import { registerMcpRoutes } from './mcp-routes.js';
 import { registerXaiRoutes } from './routes/xai.js';
@@ -6148,6 +6149,7 @@ export async function startServer({
     design,
     http: httpDeps,
     paths: pathDeps,
+    uploads: uploadDeps,
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
     conversations: conversationDeps,
@@ -6158,6 +6160,18 @@ export async function startServer({
     telemetry: { reportFinalizedMessage },
     appConfig: appConfigDeps,
     validation: validationDeps,
+  });
+  registerDocumentBoxRoutes(app, {
+    db,
+    http: httpDeps,
+    paths: pathDeps,
+    resources: {
+      listAllSkills,
+      listAllDesignTemplates,
+      listAllSkillLikeEntries,
+      listAllDesignSystems,
+      mimeFor,
+    },
   });
   registerTerminalRoutes(app, {
     db,

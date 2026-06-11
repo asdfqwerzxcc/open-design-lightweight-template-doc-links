@@ -437,6 +437,8 @@ export interface Dict {
   'settings.skillsBodyRequired': string;
   'settings.designSystems': string;
   'settings.designSystemsHint': string;
+  'settings.documentBox': string;
+  'settings.documentBoxHint': string;
   'settings.designSystemsInstalled': string;
   'settings.designSystemRenameFailed': string;
   'settings.designSystemsAdd': string;
@@ -1701,6 +1703,20 @@ export interface Dict {
   'newproj.templateLabel': string;
   'newproj.noTemplatesTitle': string;
   'newproj.noTemplatesBody': string;
+  'newproj.htmlImportTitle': string;
+  'newproj.htmlImportBody': string;
+  'newproj.htmlImportName': string;
+  'newproj.htmlImportDescription': string;
+  'newproj.htmlImportFile': string;
+  'newproj.htmlImportSource': string;
+  'newproj.htmlImportAction': string;
+  'newproj.htmlImportImporting': string;
+  'newproj.htmlImportError': string;
+  'newproj.htmlImportProjectName': string;
+  'newproj.htmlImportCreateProject': string;
+  'newproj.htmlImportCreating': string;
+  'newproj.htmlImportCreateError': string;
+  'newproj.htmlImportCreatedProject': string;
   'newproj.savedTemplate': string;
   'newproj.fileSingular': string;
   'newproj.filePlural': string;
@@ -1774,6 +1790,23 @@ export interface Dict {
   'newproj.deleteTemplateConfirm': string;
   'newproj.deleteTemplateConfirmCta': string;
   'newproj.deleteTemplateError': string;
+  'documentBox.kicker': string;
+  'documentBox.title': string;
+  'documentBox.body': string;
+  'documentBox.fileLabel': string;
+  'documentBox.titleLabel': string;
+  'documentBox.upload': string;
+  'documentBox.uploading': string;
+  'documentBox.expiry': string;
+  'documentBox.empty': string;
+  'documentBox.createLinkAria': string;
+  'documentBox.createLink': string;
+  'documentBox.copyLink': string;
+  'documentBox.revokeLink': string;
+  'documentBox.uploadError': string;
+  'documentBox.linkError': string;
+  'documentBox.revokeError': string;
+  'documentBox.copied': string;
 
   // Prompt templates
   'promptTemplates.searchPlaceholder': string;
