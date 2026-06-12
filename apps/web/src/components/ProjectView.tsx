@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { Button } from '@open-design/components';
 import { createHtmlArtifactManifest, inferLegacyManifest } from '../artifacts/manifest';
 import { resolveHtmlPointerArtifactTarget } from '../artifacts/pointer';
 import { validateHtmlArtifact } from '../artifacts/validate';
@@ -41,12 +42,12 @@ import {
   fetchConnectorStatuses,
   fetchPreviewComments,
   fetchDesignSystem,
+  createProjectDesignSystemRequest,
   fetchDesignTemplate,
   fetchProjectDesignSystemPackageAudit,
   fetchLiveArtifacts,
   fetchProjectFiles,
   fetchSkill,
-  promoteProjectToDesignSystem,
   patchPreviewCommentStatus,
   projectRawUrl,
   uploadProjectFiles,
@@ -189,6 +190,7 @@ import { FileWorkspace } from './FileWorkspace';
 import {
   type PluginFolderAgentAction,
 } from './design-files/pluginFolderActions';
+import { approvedDesignSystemCandidates, buildDesignSystemRequestInput } from './design-system-request-primitive';
 import { SHARE_TO_COMMUNITY_PROMPT } from './share-to-community/shareToCommunityPrompt';
 import { CenteredLoader } from './Loading';
 import type { SettingsSection } from './SettingsDialog';
@@ -827,6 +829,10 @@ export function ProjectView({
 }: Props) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
+  const approvedDesignSystems = useMemo(
+    () => approvedDesignSystemCandidates(designSystems),
+    [designSystems],
+  );
   const iframeKeepAlivePool = useIframeKeepAlivePool();
   const handleThemeChange = onThemeChange ?? (() => {});
   // P0 page_view page_name=chat_panel — fire once per project mount.
@@ -981,7 +987,9 @@ export function ProjectView({
     details: string | null;
     code?: string | null;
   } | null>(null);
-  const [promoteDesignSystemBusy, setPromoteDesignSystemBusy] = useState(false);
+  const [dsRequestOpen, setDsRequestOpen] = useState(false);
+  const [dsRequestReason, setDsRequestReason] = useState('');
+  const [dsRequestBusy, setDsRequestBusy] = useState(false);
   const [chatSeed, setChatSeed] = useState<{ id: string; value: string } | null>(null);
   const [autoAuditRepairSeed, setAutoAuditRepairSeed] =
     useState<{ id: string; value: string } | null>(null);
@@ -4870,7 +4878,7 @@ export function ProjectView({
       const target =
         (projectKindToTracking(project.metadata?.kind ?? null, project.metadata?.videoModel) ?? 'unknown') as TrackingDesignSystemApplyTargetKind;
       const picked = nextId
-        ? designSystems.find((d) => d.id === nextId)
+        ? approvedDesignSystems.find((d) => d.id === nextId)
         : null;
       const origin: TrackingDesignSystemOrigin | undefined = picked
         ? picked.source === 'user'
@@ -4897,7 +4905,7 @@ export function ProjectView({
           design_system_selection_mode: 'none',
           is_default: false,
           is_auto_selected: false,
-          available_design_system_count: designSystems.length,
+          available_design_system_count: approvedDesignSystems.length,
           duration_ms: 0,
         });
       } else {
@@ -4914,7 +4922,7 @@ export function ProjectView({
           design_system_selection_mode: 'manual',
           is_default: false,
           is_auto_selected: false,
-          available_design_system_count: designSystems.length,
+          available_design_system_count: approvedDesignSystems.length,
           duration_ms: 0,
         });
       }
@@ -4926,30 +4934,38 @@ export function ProjectView({
       onProjectChange(updated);
       void patchProject(project.id, { designSystemId: nextId });
     },
-    [project, onProjectChange, designSystems, analytics.track],
+    [project, onProjectChange, approvedDesignSystems, analytics.track],
   );
 
-  const handlePromoteToDesignSystem = useCallback(async () => {
-    if (promoteDesignSystemBusy) return;
-    setPromoteDesignSystemBusy(true);
+  const handleSubmitDesignSystemRequest = useCallback(async () => {
+    const reason = dsRequestReason.trim();
+    if (!reason || dsRequestBusy) return;
+    setDsRequestBusy(true);
     setProjectActionsToast(null);
     try {
-      const result = await promoteProjectToDesignSystem(project.id, {
-        title: `${project.name} Design System`,
-      });
+      const result = await createProjectDesignSystemRequest(project.id, buildDesignSystemRequestInput({
+        mode: 'project-single',
+        source: 'project_header',
+        reason,
+        projectId: project.id,
+        projectName: project.name,
+        kind: project.metadata?.kind,
+      }));
       if (!result) {
         setProjectActionsToast({
-          message: 'Could not promote project to design system',
+          message: t('designSystemPicker.requestFailed'),
           details: null,
         });
         return;
       }
-      await onDesignSystemsRefresh?.();
-      navigate({ kind: 'design-system-detail', designSystemId: result.designSystem.id });
+      onProjectChange(result.project);
+      setDsRequestReason('');
+      setDsRequestOpen(false);
     } finally {
-      setPromoteDesignSystemBusy(false);
+      setDsRequestBusy(false);
     }
-  }, [onDesignSystemsRefresh, project.id, project.name, promoteDesignSystemBusy]);
+  }, [dsRequestBusy, dsRequestReason, onProjectChange, project.id, project.metadata?.kind, project.name, t]);
+
 
   const projectMeta = useMemo(() => {
     // Design system is rendered by the adjacent picker chip — keep the
@@ -5745,29 +5761,39 @@ export function ProjectView({
               designSystemPicker={(
                 <div className="project-ds-control-group" role="group" aria-label="Design system">
                   <DesignSystemPicker
-                    designSystems={designSystems}
+                    designSystems={approvedDesignSystems}
                     selectedId={project.designSystemId ?? null}
                     onChange={handleChangeDesignSystemId}
                   />
-                  <button
-                    type="button"
-                    className="project-ds-promote-button"
-                    onClick={() => void handlePromoteToDesignSystem()}
-                    disabled={promoteDesignSystemBusy}
-                    aria-label={
-                      promoteDesignSystemBusy
-                        ? t('designSystemPicker.createDraftBusyAria')
-                        : t('designSystemPicker.createDraftAria')
-                    }
-                    title={t('designSystemPicker.createDraftTitle')}
-                  >
-                    <Icon name={promoteDesignSystemBusy ? 'spinner' : 'sparkles'} size={14} />
-                    <span>
-                      {promoteDesignSystemBusy
-                        ? t('designSystemPicker.createDraftBusy')
-                        : t('designSystemPicker.createDraftLabel')}
+                  {project.metadata?.designSystemMode === 'temporary-none' && project.metadata.designSystemRequest ? (
+                    <span className="project-ds-temporary-pill">
+                      {t('designSystemPicker.temporaryRequestStatus', { status: project.metadata.designSystemRequest.status })}
                     </span>
-                  </button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    className="project-ds-request-button"
+                    onClick={() => setDsRequestOpen((value) => !value)}
+                  >
+                    {dsRequestOpen ? t('designSystemPicker.requestHide') : t('designSystemPicker.requestShow')}
+                  </Button>
+                  {dsRequestOpen ? (
+                    <div className="project-ds-request-popover">
+                      <textarea
+                        value={dsRequestReason}
+                        onChange={(event) => setDsRequestReason(event.target.value)}
+                        placeholder={t('designSystemPicker.requestPlaceholder')}
+                        rows={3}
+                      />
+                      <Button
+                        variant="primary-ghost"
+                        onClick={() => void handleSubmitDesignSystemRequest()}
+                        disabled={dsRequestBusy || !dsRequestReason.trim()}
+                      >
+                        {dsRequestBusy ? t('common.loading') : t('designSystemPicker.requestContinue')}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               )}
             />

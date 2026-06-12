@@ -5,6 +5,7 @@ import {
   defaultScenarioPluginIdForProjectMetadata,
   type ChatSessionMode,
   type PluginManifest,
+  type DesignSystemRequestItem,
 } from '@open-design/contracts';
 import { createProjectArtifactFile } from './artifact-create.js';
 import { ArtifactPublicationBlockedError } from './artifact-publication-guard.js';
@@ -31,6 +32,12 @@ import {
 } from './project-locations.js';
 import { auditDesignSystemPackage } from './tools-connectors-cli.js';
 import { deriveHtmlTemplateDesignSystem } from './templates/html-template-derivation.js';
+import {
+  createDesignSystemRequest,
+  deleteDesignSystemRequest,
+  designSystemRequestProjectMetadata,
+  DesignSystemGovernanceError,
+} from './design-system-governance.js';
 
 export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'uploads' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'validation'> {}
 
@@ -783,7 +790,7 @@ function normalizeChatSessionMode(value: unknown): ChatSessionMode {
 export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
   const { db, design } = ctx;
   const { sendApiError, sendMulterError, createSseResponse } = ctx.http;
-  const { DESIGN_SYSTEMS_DIR, PROJECTS_DIR, SKILLS_DIR } = ctx.paths;
+  const { DESIGN_SYSTEMS_DIR, PROJECTS_DIR, RUNTIME_DATA_DIR, SKILLS_DIR } = ctx.paths;
   const { upload } = ctx.uploads;
   const { readAppConfig, writeAppConfig } = ctx.appConfig;
   const { insertProject, validateLinkedDirs, getProject, updateProject, dbDeleteProject, removeProjectDir } = ctx.projectStore;
@@ -1219,7 +1226,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
 
   app.post('/api/projects', async (req, res) => {
     try {
-      const { id, name, projectLocationId, skillId, designSystemId, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
+      const { id, name, projectLocationId, skillId, designSystemId, designSystemRequest, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
         req.body || {};
       if (typeof id !== 'string' || !isSafeId(id)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
@@ -1384,6 +1391,48 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         createdAt: now,
         updatedAt: now,
       });
+      let linkedDesignSystemRequest: DesignSystemRequestItem | null = null;
+      if (designSystemRequest && typeof designSystemRequest === 'object') {
+        try {
+          linkedDesignSystemRequest = await createDesignSystemRequest(
+            RUNTIME_DATA_DIR,
+            {
+              ...designSystemRequest,
+              source: designSystemRequest.source ?? 'home_new_project',
+              linkedProjectId: id,
+              temporaryMode: true,
+            },
+            { linkedProjectId: id },
+          );
+          const linkedMetadata = {
+            ...(project.metadata ?? projectMetadata ?? { kind: 'prototype' }),
+            designSystemMode: 'temporary-none',
+            designSystemRequest: designSystemRequestProjectMetadata(linkedDesignSystemRequest),
+            temporaryDesignSystem: {
+              reason: linkedDesignSystemRequest.reason,
+              createdAt: linkedDesignSystemRequest.createdAt,
+            },
+          };
+          const patchedProject = updateProject(db, id, {
+            designSystemId: null,
+            metadata: linkedMetadata,
+          });
+          if (!patchedProject) {
+            throw new DesignSystemGovernanceError(500, 'DESIGN_SYSTEM_REQUEST_LINK_FAILED', 'project request link failed');
+          }
+          project = patchedProject;
+        } catch (err) {
+          if (linkedDesignSystemRequest?.id) {
+            await deleteDesignSystemRequest(RUNTIME_DATA_DIR, linkedDesignSystemRequest.id).catch(() => false);
+          }
+          dbDeleteProject(db, id);
+          await removeProjectDir(PROJECTS_DIR, id).catch(() => {});
+          if (externalProjectDir) {
+            await rm(externalProjectDir, { recursive: true, force: true }).catch(() => {});
+          }
+          throw err;
+        }
+      }
       const explicitPlugin =
         typeof req.body?.pluginId === 'string' && req.body.pluginId.trim().length > 0
           ? true
@@ -1471,6 +1520,9 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       };
       res.json(body);
     } catch (err: any) {
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });
@@ -1589,6 +1641,55 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       const body = { project };
       res.json(body);
     } catch (err: any) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
+  app.post('/api/projects/:id/design-system-request', async (req, res) => {
+    let linkedDesignSystemRequest: DesignSystemRequestItem | null = null;
+    try {
+      const existing = getProject(db, req.params.id);
+      if (!existing) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
+      linkedDesignSystemRequest = await createDesignSystemRequest(
+        RUNTIME_DATA_DIR,
+        {
+          ...(req.body || {}),
+          source: req.body?.source ?? 'project_header',
+          linkedProjectId: existing.id,
+          temporaryMode: true,
+          projectContext: {
+            ...(req.body?.projectContext || {}),
+            projectId: existing.id,
+            projectName: existing.name,
+            kind: existing.metadata?.kind,
+          },
+        },
+        { linkedProjectId: existing.id },
+      );
+      const metadata = {
+        ...(existing.metadata ?? { kind: 'prototype' }),
+        designSystemMode: 'temporary-none',
+        designSystemRequest: designSystemRequestProjectMetadata(linkedDesignSystemRequest),
+        temporaryDesignSystem: {
+          reason: linkedDesignSystemRequest.reason,
+          createdAt: linkedDesignSystemRequest.createdAt,
+        },
+      };
+      const project = updateProject(db, existing.id, {
+        designSystemId: null,
+        metadata,
+      });
+      if (!project) {
+        throw new DesignSystemGovernanceError(500, 'DESIGN_SYSTEM_REQUEST_LINK_FAILED', 'project request link failed');
+      }
+      res.status(201).json({ project, request: linkedDesignSystemRequest });
+    } catch (err: any) {
+      if (linkedDesignSystemRequest?.id) {
+        await deleteDesignSystemRequest(RUNTIME_DATA_DIR, linkedDesignSystemRequest.id).catch(() => false);
+      }
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });

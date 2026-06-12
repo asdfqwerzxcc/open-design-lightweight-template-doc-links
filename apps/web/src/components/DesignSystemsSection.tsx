@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import { Button } from '@open-design/components';
 import { useT } from '../i18n';
 import type { AppConfig, DesignSystemGenerationJob, DesignSystemSummary } from '../types';
 import {
   fetchDesignSystems,
+  fetchDesignSystemReadiness,
+  fetchDesignSystemRequests,
   importGitHubDesignSystem,
   importLocalDesignSystem,
   importShadcnDesignSystem,
   updateDesignSystemDraft,
+  updateDesignSystemReadiness,
+  updateDesignSystemRequest,
 } from '../providers/registry';
 import { DesignSystemPreviewModal } from './DesignSystemPreviewModal';
 import { Icon } from './Icon';
 import { orderDesignSystemGroups } from './design-system-group-order';
 import { AnimatePresence } from 'motion/react';
+import type { DesignSystemReadinessState, DesignSystemRequestItem } from '@open-design/contracts';
 
 // Sibling Settings section that hosts the design-systems registry.
 // Lifted out of the previous LibrarySection so each surface (functional
@@ -70,10 +76,30 @@ export function DesignSystemsSection({
   const [importedDesignSystem, setImportedDesignSystem] = useState<DesignSystemSummary | null>(null);
   const [highlightedDesignSystemId, setHighlightedDesignSystemId] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [requests, setRequests] = useState<DesignSystemRequestItem[]>([]);
+  const [readinessById, setReadinessById] = useState<Record<string, DesignSystemReadinessState>>({});
+  const [governanceBusy, setGovernanceBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDesignSystems().then(setDesignSystems);
+    void refreshDesignSystemGovernance();
   }, []);
+
+  async function refreshDesignSystemGovernance() {
+    const [systems, backlog] = await Promise.all([
+      fetchDesignSystems(),
+      fetchDesignSystemRequests(),
+    ]);
+    setDesignSystems(systems);
+    setRequests(backlog);
+    const readinessEntries = await Promise.all(
+      systems.map(async (system) => [system.id, await fetchDesignSystemReadiness(system.id)] as const),
+    );
+    setReadinessById(
+      Object.fromEntries(
+        readinessEntries.filter((entry): entry is readonly [string, DesignSystemReadinessState] => Boolean(entry[1])),
+      ),
+    );
+  }
 
   const disabledDS = useMemo(
     () => new Set(cfg.disabledDesignSystems ?? []),
@@ -215,6 +241,48 @@ export function DesignSystemsSection({
     setImportError(null);
     setImportMessage(null);
     setImportedDesignSystem(null);
+  }
+
+  async function updateRequestStatus(request: DesignSystemRequestItem, status: DesignSystemRequestItem['status']) {
+    setGovernanceBusy(request.id);
+    try {
+      const updated = await updateDesignSystemRequest(request.id, {
+        status,
+        statusUpdatedBy: 'settings',
+      });
+      if (updated) {
+        setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      }
+    } finally {
+      setGovernanceBusy(null);
+    }
+  }
+
+  async function markReviewGatesPassed(system: DesignSystemSummary) {
+    const gateIds = [
+      'review:designops',
+      'review:brand-fit',
+      'review:token-completeness',
+      'review:component-completeness',
+      'review:accessibility-baseline',
+    ] as const;
+    setGovernanceBusy(system.id);
+    try {
+      let latest: DesignSystemReadinessState | null = null;
+      for (const gateId of gateIds) {
+        latest = await updateDesignSystemReadiness(system.id, {
+          gateId,
+          status: 'passed',
+          actor: 'settings',
+          message: 'Approved by DesignOps in Settings.',
+        });
+      }
+      if (latest) {
+        setReadinessById((current) => ({ ...current, [system.id]: latest }));
+      }
+    } finally {
+      setGovernanceBusy(null);
+    }
   }
 
   async function handleLocalImport(e: FormEvent<HTMLFormElement>) {
@@ -468,6 +536,38 @@ export function DesignSystemsSection({
         </div>
       </div>
 
+      <div className="design-system-governance-panel">
+        <div className="library-section-header compact">
+          <h4 className="library-section-title">{t('settings.designSystemRequestsTitle')}</h4>
+          <Button variant="ghost" onClick={() => void refreshDesignSystemGovernance()}>
+            {t('designFiles.refresh')}
+          </Button>
+        </div>
+        {requests.length === 0 ? (
+          <p className="library-empty">{t('settings.designSystemRequestsEmpty')}</p>
+        ) : (
+          <div className="design-system-request-list">
+            {requests.map((request) => (
+              <div key={request.id} className="design-system-request-row">
+                <div>
+                  <strong>{request.reason}</strong>
+                  <p>{request.linkedProjectId ?? request.projectContext?.projectName ?? request.source}</p>
+                </div>
+                <select
+                  value={request.status}
+                  disabled={governanceBusy === request.id}
+                  onChange={(event) => void updateRequestStatus(request, event.target.value as DesignSystemRequestItem['status'])}
+                >
+                  {['open', 'triaging', 'planned', 'in_progress', 'fulfilled', 'rejected', 'closed'].map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="library-toolbar library-toolbar-row">
         <input
           type="search"
@@ -570,6 +670,28 @@ export function DesignSystemsSection({
                           ) : null}
                         </div>
                         <div className="library-ds-summary">{ds.summary}</div>
+                        {readinessById[ds.id] ? (
+                          <div className="design-system-readiness-summary">
+                            <span>
+                              {readinessById[ds.id]!.readyToPublish
+                                ? t('settings.designSystemReadinessReady')
+                                : t('settings.designSystemReadinessBlocked', { count: readinessById[ds.id]!.blockers.length })}
+                            </span>
+                            {ds.source === 'user' || ds.isEditable === true ? (
+                              <button
+                                type="button"
+                                className="library-install-status-link"
+                                disabled={governanceBusy === ds.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void markReviewGatesPassed(ds);
+                                }}
+                              >
+                                {t('settings.designSystemReadinessApprove')}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="library-ds-toggle-cell">
                         <label

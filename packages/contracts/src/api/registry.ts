@@ -347,6 +347,132 @@ export interface DesignSystemsResponse {
   designSystems: DesignSystemSummary[];
 }
 
+export type DesignSystemVisibility = 'all' | 'approved';
+
+export type DesignSystemRequestStatus =
+  | 'open'
+  | 'triaging'
+  | 'planned'
+  | 'in_progress'
+  | 'fulfilled'
+  | 'rejected'
+  | 'closed';
+
+export type DesignSystemRequestSource =
+  | 'home_new_project'
+  | 'project_header'
+  | 'cli';
+
+export interface DesignSystemRequestProjectContext {
+  projectId?: string;
+  projectName?: string;
+  kind?: string;
+  surface?: string;
+  description?: string;
+}
+
+export interface DesignSystemRequestItem {
+  id: string;
+  status: DesignSystemRequestStatus;
+  source: DesignSystemRequestSource;
+  requester?: string | null;
+  reason: string;
+  projectContext?: DesignSystemRequestProjectContext;
+  linkedProjectId?: string | null;
+  temporaryMode?: boolean;
+  resolvedDesignSystemId?: string | null;
+  resolutionNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  statusUpdatedAt: string;
+  statusUpdatedBy?: string | null;
+}
+
+export interface DesignSystemRequestCreateRequest {
+  source: DesignSystemRequestSource;
+  requester?: string | null;
+  reason: string;
+  projectContext?: DesignSystemRequestProjectContext;
+  linkedProjectId?: string | null;
+  temporaryMode?: boolean;
+}
+
+export interface DesignSystemRequestUpdateRequest {
+  status?: DesignSystemRequestStatus;
+  statusUpdatedBy?: string | null;
+  resolvedDesignSystemId?: string | null;
+  resolutionNote?: string | null;
+}
+
+export interface DesignSystemRequestsResponse {
+  requests: DesignSystemRequestItem[];
+}
+
+export interface DesignSystemRequestResponse {
+  request: DesignSystemRequestItem;
+}
+
+export type DesignSystemReadinessGateId =
+  | 'artifact:design-md'
+  | 'artifact:tokens-css'
+  | 'artifact:components-or-preview'
+  | 'artifact:quality-report'
+  | 'review:designops'
+  | 'review:brand-fit'
+  | 'review:token-completeness'
+  | 'review:component-completeness'
+  | 'review:accessibility-baseline';
+
+export type DesignSystemReadinessGateStatus =
+  | 'missing'
+  | 'pending'
+  | 'passed'
+  | 'failed'
+  | 'waived';
+
+export interface DesignSystemReadinessGate {
+  id: DesignSystemReadinessGateId;
+  label: string;
+  required: boolean;
+  status: DesignSystemReadinessGateStatus;
+  message?: string;
+  evidencePath?: string;
+  checkedAt?: string;
+  checkedBy?: string;
+  waivedAt?: string;
+  waivedBy?: string;
+  waiverReason?: string;
+}
+
+export interface DesignSystemReadinessState {
+  schemaVersion: 'design-system-approval/v1';
+  designSystemId: string;
+  readyToPublish: boolean;
+  approved: boolean;
+  gates: DesignSystemReadinessGate[];
+  blockers: string[];
+  evaluatedAt: string;
+  evaluatedBy?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  publishedAt?: string;
+  publishedBy?: string;
+}
+
+export interface DesignSystemReadinessResponse {
+  readiness: DesignSystemReadinessState;
+}
+
+export interface DesignSystemReadinessUpdateRequest {
+  gateId: DesignSystemReadinessGateId;
+  status: DesignSystemReadinessGateStatus;
+  message?: string;
+  evidencePath?: string;
+  actor?: string;
+  waivedBy?: string;
+  waiverReason?: string;
+}
+
 export interface DesignSystemResponse {
   designSystem: DesignSystemDetail;
 }

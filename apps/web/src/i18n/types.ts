@@ -3222,4 +3222,21 @@ export interface Dict {
   'diagnostics.exporting': string;
   'diagnostics.exportSuccess': string;
   'diagnostics.exportFailed': string;
+  // Design-system governance
+  'newproj.dsRequestShow': string;
+  'newproj.dsRequestHide': string;
+  'newproj.dsRequestReasonLabel': string;
+  'newproj.dsRequestReasonPlaceholder': string;
+  'newproj.dsRequestContinue': string;
+  'designSystemPicker.requestShow': string;
+  'designSystemPicker.requestHide': string;
+  'designSystemPicker.requestPlaceholder': string;
+  'designSystemPicker.requestContinue': string;
+  'designSystemPicker.requestFailed': string;
+  'designSystemPicker.temporaryRequestStatus': string;
+  'settings.designSystemRequestsTitle': string;
+  'settings.designSystemRequestsEmpty': string;
+  'settings.designSystemReadinessReady': string;
+  'settings.designSystemReadinessBlocked': string;
+  'settings.designSystemReadinessApprove': string;
 }

@@ -4,6 +4,8 @@ out/
 .next/
 .next-*/
 .tmp/
+# GJC workflow state, specs, plans, and ledgers are local run artifacts.
+.gjc/
 .omo/
 .DS_Store
 *.log

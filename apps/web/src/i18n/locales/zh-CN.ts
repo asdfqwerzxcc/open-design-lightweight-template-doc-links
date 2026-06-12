@@ -3091,4 +3091,22 @@ export const zhCN: Dict = {
   'mcpClient.notForwardedToLabel': '未转发给：',
   'mcpClient.forwardedAcpNote': '标记为 stdio only 的 ACP 适配器只会从此列表接收 stdio 类型的 MCP 服务器；HTTP 和 SSE 条目会在启动时被丢弃。',
   'mcpClient.notForwardedNote': '对于这些智能体，请在其各自的配置文件中配置 MCP 服务器（例如 ~/.codex/config.toml、~/.gemini/settings.json）；下方的服务器在那里不会生效。',
+  // Design-system governance
+  'newproj.dsRequestShow': 'Request a design system instead',
+  'newproj.dsRequestHide': 'Hide request form',
+  'newproj.dsRequestReasonLabel': 'What kind of design system do you need?',
+  'newproj.dsRequestReasonPlaceholder': 'Tell DesignOps what project context or brand fit is missing.',
+  'newproj.dsRequestContinue': 'Request and continue without one',
+  'designSystemPicker.requestShow': 'Request fit',
+  'designSystemPicker.requestHide': 'Hide request',
+  'designSystemPicker.requestPlaceholder': 'What approved system is missing for this project?',
+  'designSystemPicker.requestContinue': 'Request and continue',
+  'designSystemPicker.requestFailed': 'Could not create the design-system request.',
+  'designSystemPicker.temporaryRequestStatus': 'Temporary · request {status}',
+  'settings.designSystemRequestsTitle': 'DesignOps requests',
+  'settings.designSystemRequestsEmpty': 'No design-system requests yet.',
+  'settings.designSystemReadinessReady': 'Readiness: ready to publish',
+  'settings.designSystemReadinessBlocked': 'Readiness: {count} blocker(s)',
+  'settings.designSystemReadinessApprove': 'Mark review gates passed',
+
 };

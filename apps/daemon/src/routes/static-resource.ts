@@ -27,6 +27,7 @@ import { listPromptTemplates, readPromptTemplate } from '../prompt-templates.js'
 import { readAppConfig } from '../app-config.js';
 import { installFromTarget, uninstallById } from '../library-install.js';
 import type { RouteDeps } from '../server-context.js';
+import { filterApprovedDesignSystems } from '../design-system-governance.js';
 
 export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'http' | 'paths' | 'resources'> {
   tokenContractRebuild?: {
@@ -354,11 +355,22 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     }
   });
 
-  app.get('/api/design-systems', async (_req, res) => {
+  app.get('/api/design-systems', async (req, res) => {
     try {
       const systems = await listAllDesignSystems();
+      const visibleSystems = req.query.visibility === 'approved'
+        ? await filterApprovedDesignSystems(
+            RUNTIME_DATA_DIR,
+            DESIGN_SYSTEMS_DIR,
+            USER_DESIGN_SYSTEMS_DIR,
+            systems,
+          )
+        : systems;
       res.json({
-        designSystems: systems.map(({ body, ...rest }) => rest),
+        designSystems: visibleSystems.map((system) => {
+          const { body: _body, ...rest } = system as typeof system & { body?: string };
+          return rest;
+        }),
       });
     } catch (err: any) {
       res.status(500).json({ error: String(err) });

@@ -3090,4 +3090,22 @@ export const tr: Dict = {
   'mcpClient.notForwardedToLabel': 'İletilmediği yer:',
   'mcpClient.forwardedAcpNote': 'stdio olarak işaretlenen ACP adaptörleri bu listeden yalnızca stdio MCP sunucularını alır; HTTP ve SSE girdileri başlatma sırasında düşürülür.',
   'mcpClient.notForwardedNote': 'Bu agent\'lar için MCP sunucularını agent\'ın kendi yapılandırma dosyasında ayarlayın (ör. ~/.codex/config.toml, ~/.gemini/settings.json); aşağıdaki sunucular orada sessizce kullanılmaz.',
+  // Design-system governance
+  'newproj.dsRequestShow': 'Request a design system instead',
+  'newproj.dsRequestHide': 'Hide request form',
+  'newproj.dsRequestReasonLabel': 'What kind of design system do you need?',
+  'newproj.dsRequestReasonPlaceholder': 'Tell DesignOps what project context or brand fit is missing.',
+  'newproj.dsRequestContinue': 'Request and continue without one',
+  'designSystemPicker.requestShow': 'Request fit',
+  'designSystemPicker.requestHide': 'Hide request',
+  'designSystemPicker.requestPlaceholder': 'What approved system is missing for this project?',
+  'designSystemPicker.requestContinue': 'Request and continue',
+  'designSystemPicker.requestFailed': 'Could not create the design-system request.',
+  'designSystemPicker.temporaryRequestStatus': 'Temporary · request {status}',
+  'settings.designSystemRequestsTitle': 'DesignOps requests',
+  'settings.designSystemRequestsEmpty': 'No design-system requests yet.',
+  'settings.designSystemReadinessReady': 'Readiness: ready to publish',
+  'settings.designSystemReadinessBlocked': 'Readiness: {count} blocker(s)',
+  'settings.designSystemReadinessApprove': 'Mark review gates passed',
+
 };

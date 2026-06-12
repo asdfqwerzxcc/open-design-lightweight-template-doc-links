@@ -491,6 +491,18 @@ import { registerSocialShareRoutes } from './social-share-routes.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import { registerStaticResourceRoutes } from './routes/static-resource.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
+import {
+  assertDesignSystemReadyToPublish,
+  createDesignSystemRequest,
+  DesignSystemGovernanceError,
+  filterApprovedDesignSystems,
+  getDesignSystemRequest,
+  isDesignSystemRequestStatus,
+  listDesignSystemRequests,
+  readDesignSystemReadiness,
+  updateDesignSystemReadiness,
+  updateDesignSystemRequest,
+} from './design-system-governance.js';
 import { installRouteRegistrationGuard } from './route-registration-guard.js';
 import { submitToolResultToRunState } from './run-tool-results.js';
 import { assertServerContextSatisfiesRoutes } from './route-context-contract.js';
@@ -6928,13 +6940,68 @@ export async function startServer({
     }
   });
 
-  app.get('/api/design-systems', async (_req, res) => {
+  app.get('/api/design-systems', async (req, res) => {
     try {
       const systems = await listAllDesignSystems();
+      const visibleSystems = req.query.visibility === 'approved'
+        ? await filterApprovedDesignSystems(
+            RUNTIME_DATA_DIR,
+            DESIGN_SYSTEMS_DIR,
+            USER_DESIGN_SYSTEMS_DIR,
+            systems,
+          )
+        : systems;
       res.json({
-        designSystems: systems.map(({ body, ...rest }) => rest),
+        designSystems: visibleSystems.map(({ body, ...rest }) => rest),
       });
     } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.get('/api/design-system-requests', async (req, res) => {
+    try {
+      const status = typeof req.query.status === 'string' && isDesignSystemRequestStatus(req.query.status)
+        ? req.query.status
+        : undefined;
+      const requests = await listDesignSystemRequests(RUNTIME_DATA_DIR, { status });
+      res.json({ requests });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.post('/api/design-system-requests', async (req, res) => {
+    try {
+      const request = await createDesignSystemRequest(RUNTIME_DATA_DIR, req.body || {});
+      res.status(201).json({ request });
+    } catch (err) {
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.get('/api/design-system-requests/:id', async (req, res) => {
+    try {
+      const request = await getDesignSystemRequest(RUNTIME_DATA_DIR, req.params.id);
+      if (!request) return sendApiError(res, 404, 'DESIGN_SYSTEM_REQUEST_NOT_FOUND', 'design system request not found');
+      res.json({ request });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.patch('/api/design-system-requests/:id', async (req, res) => {
+    try {
+      const request = await updateDesignSystemRequest(RUNTIME_DATA_DIR, req.params.id, req.body || {});
+      if (!request) return sendApiError(res, 404, 'DESIGN_SYSTEM_REQUEST_NOT_FOUND', 'design system request not found');
+      res.json({ request });
+    } catch (err) {
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
       res.status(500).json({ error: String(err) });
     }
   });
@@ -7045,6 +7112,44 @@ export async function startServer({
     }
   });
 
+  app.get('/api/design-systems/:id/readiness', async (req, res) => {
+    try {
+      const systems = await listAllDesignSystems();
+      const summary = systems.find((s) => s.id === req.params.id);
+      if (!summary) return sendApiError(res, 404, 'DESIGN_SYSTEM_NOT_FOUND', 'design system not found');
+      const readiness = await readDesignSystemReadiness(
+        RUNTIME_DATA_DIR,
+        DESIGN_SYSTEMS_DIR,
+        USER_DESIGN_SYSTEMS_DIR,
+        summary,
+      );
+      res.json({ readiness });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.patch('/api/design-systems/:id/readiness', async (req, res) => {
+    try {
+      const systems = await listAllDesignSystems();
+      const summary = systems.find((s) => s.id === req.params.id);
+      if (!summary) return sendApiError(res, 404, 'DESIGN_SYSTEM_NOT_FOUND', 'design system not found');
+      await updateDesignSystemReadiness(RUNTIME_DATA_DIR, req.params.id, req.body || {});
+      const readiness = await readDesignSystemReadiness(
+        RUNTIME_DATA_DIR,
+        DESIGN_SYSTEMS_DIR,
+        USER_DESIGN_SYSTEMS_DIR,
+        summary,
+      );
+      res.json({ readiness });
+    } catch (err) {
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   app.get('/api/design-systems/:id', async (req, res) => {
     try {
       const systems = await listAllDesignSystems();
@@ -7102,6 +7207,17 @@ export async function startServer({
 
   app.patch('/api/design-systems/:id', async (req, res) => {
     try {
+      if (req.body?.status === 'published') {
+        const systems = await listAllDesignSystems();
+        const summary = systems.find((s) => s.id === req.params.id);
+        if (!summary) return sendApiError(res, 404, 'DESIGN_SYSTEM_NOT_FOUND', 'design system not found');
+        await assertDesignSystemReadyToPublish(
+          RUNTIME_DATA_DIR,
+          DESIGN_SYSTEMS_DIR,
+          USER_DESIGN_SYSTEMS_DIR,
+          summary,
+        );
+      }
       const updated = await updateUserDesignSystem(
         USER_DESIGN_SYSTEMS_DIR,
         req.params.id,
@@ -7112,6 +7228,9 @@ export async function startServer({
       }
       res.json({ ...updated, designSystem: updated });
     } catch (err) {
+      if (err instanceof DesignSystemGovernanceError) {
+        return sendApiError(res, err.status, err.code, err.message);
+      }
       res.status(400).json({ error: String(err) });
     }
   });

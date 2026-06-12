@@ -61,6 +61,8 @@ const designSystems: DesignSystemSummary[] = [
     summary: 'Friendly tactile product UI.',
     category: 'Product',
     swatches: ['#f4efe7', '#25211d'],
+    source: 'built-in',
+    status: 'published',
   },
   {
     id: 'noir',
@@ -68,6 +70,8 @@ const designSystems: DesignSystemSummary[] = [
     summary: 'High-contrast editorial system.',
     category: 'Editorial',
     swatches: ['#111111', '#f7f0e8'],
+    source: 'built-in',
+    status: 'published',
   },
 ];
 
@@ -128,6 +132,81 @@ describe('NewProjectPanel design system defaults', () => {
     expect(markup).toContain('Clay');
     expect(markup).toContain('Default');
     expect(markup).not.toContain('Freeform');
+  });
+
+  it('hides draft systems from the Home picker even when they are passed in', () => {
+    render(
+      <NewProjectPanel
+        skills={skills}
+        designSystems={[
+          ...designSystems,
+          {
+            id: 'draft-brand',
+            title: 'Draft Brand',
+            summary: 'Should not be selectable by general users.',
+            category: 'Drafts',
+            swatches: ['#ff00ff'],
+            source: 'user',
+            status: 'draft',
+            isEditable: true,
+          },
+        ]}
+        defaultDesignSystemId="draft-brand"
+        templates={[]}
+        onDeleteTemplate={vi.fn()}
+        promptTemplates={[]}
+        onCreate={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('design-system-trigger'));
+
+    expect(screen.queryByText('Draft Brand')).toBeNull();
+    expect(screen.getByText('Clay')).toBeTruthy();
+  });
+
+  it('creates a temporary no-fit request from the Home picker', () => {
+    const onCreate = vi.fn();
+    render(
+      <NewProjectPanel
+        skills={skills}
+        designSystems={designSystems}
+        defaultDesignSystemId="clay"
+        templates={[]}
+        onDeleteTemplate={vi.fn()}
+        promptTemplates={[]}
+        onCreate={onCreate}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('new-project-name'), {
+      target: { value: 'Internal tools project' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request a design system instead' }));
+    fireEvent.change(screen.getByLabelText('What kind of design system do you need?'), {
+      target: { value: 'Need the internal admin brand.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request and continue without one' }));
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Internal tools project',
+        designSystemId: null,
+        metadata: expect.objectContaining({
+          designSystemMode: 'temporary-none',
+          temporaryDesignSystem: expect.objectContaining({ reason: 'Need the internal admin brand.' }),
+        }),
+        designSystemRequest: expect.objectContaining({
+          source: 'home_new_project',
+          reason: 'Need the internal admin brand.',
+          temporaryMode: true,
+          projectContext: expect.objectContaining({
+            projectName: 'Internal tools project',
+            surface: 'home-multi',
+          }),
+        }),
+      }),
+    );
   });
 
   it('keeps media project creation from inheriting a hidden design system pick', () => {

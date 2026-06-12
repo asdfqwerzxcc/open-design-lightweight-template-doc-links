@@ -170,7 +170,7 @@ const DAEMON_STRING_FLAGS = new Set([
 const DAEMON_BOOLEAN_FLAGS = new Set([
   'help', 'h', 'json', 'headless', 'serve-web', 'no-open',
 ]);
-const LIBRARY_STRING_FLAGS = new Set(['daemon-url', 'query', 'tag']);
+const LIBRARY_STRING_FLAGS = new Set(['daemon-url', 'query', 'tag', 'visibility']);
 const LIBRARY_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const DIAGNOSTICS_STRING_FLAGS = new Set(['daemon-url', 'output']);
 const DIAGNOSTICS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
@@ -6583,7 +6583,10 @@ async function runLibraryList(name, args) {
   const apiPath = name === 'design-systems' ? '/api/design-systems' : `/api/${name}`;
   switch (sub) {
     case 'list': {
-      const resp = await fetch(`${base}${apiPath}`);
+      const query = name === 'design-systems' && typeof flags.visibility === 'string'
+        ? `?visibility=${encodeURIComponent(flags.visibility)}`
+        : '';
+      const resp = await fetch(`${base}${apiPath}${query}`);
       if (!resp.ok) return structuredHttpFailure(resp);
       const data = await resp.json();
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
@@ -6622,11 +6625,140 @@ async function runDesignSystems(args) {
   if (args[0] === 'import-github') return runDesignSystemImportGithub(args.slice(1));
   if (args[0] === 'import-shadcn') return runDesignSystemImportShadcn(args.slice(1));
   if (args[0] === 'rebuild-token-contract') return runDesignSystemTokenContractRebuild(args.slice(1));
+  if (args[0] === 'requests') return runDesignSystemRequests(args.slice(1));
+  if (args[0] === 'readiness') return runDesignSystemReadiness(args.slice(1));
   if (!args[0] || isDesignSystemsHelpArg(args[0])) {
     console.log(DESIGN_SYSTEMS_USAGE);
     process.exit(isDesignSystemsHelpArg(args[0]) ? 0 : 2);
   }
   return runLibraryList('design-systems', args);
+}
+
+async function runDesignSystemReadiness(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  od design-systems readiness <id> [--json] [--daemon-url <url>]
+
+Print readiness gates and publish blockers for a design system.`);
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  const flags = parseFlags(args, { string: LIBRARY_STRING_FLAGS, boolean: LIBRARY_BOOLEAN_FLAGS });
+  const id = positionalArgs(args, LIBRARY_STRING_FLAGS)[0];
+  if (!id) {
+    console.error('Usage: od design-systems readiness <id>');
+    process.exit(2);
+  }
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
+  const resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(id)}/readiness`);
+  if (!resp.ok) return structuredHttpFailure(resp);
+  const data = await resp.json();
+  if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+  const readiness = data.readiness ?? data;
+  console.log(`${id}\t${readiness.readyToPublish ? 'ready' : 'blocked'}\t${readiness.approved ? 'approved' : 'not-approved'}`);
+  for (const gate of readiness.gates ?? []) {
+    console.log(`${gate.status}\t${gate.id}\t${gate.message ?? ''}`);
+  }
+}
+
+async function runDesignSystemRequests(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || args.includes('--help') || args.includes('-h')) {
+    console.log(`Usage:
+  od design-systems requests list [--status <status>] [--json] [--daemon-url <url>]
+  od design-systems requests show <id> [--json] [--daemon-url <url>]
+  od design-systems requests create --project <id> --reason <text> [--source home_new_project|project_header|cli] [--json]
+  od design-systems requests update <id> --status <status> [--notes <text>] [--resolved-design-system <id>] [--json]
+
+Manage DesignOps design-system request backlog records.`);
+    process.exit(!sub ? 2 : 0);
+  }
+  const rest = args.slice(1);
+  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'status', 'project', 'reason', 'source', 'notes', 'resolved-design-system', 'requester']);
+  const flags = parseFlags(rest, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
+  switch (sub) {
+    case 'list': {
+      const query = typeof flags.status === 'string'
+        ? `?status=${encodeURIComponent(flags.status)}`
+        : '';
+      const resp = await fetch(`${base}/api/design-system-requests${query}`);
+      if (!resp.ok) return structuredHttpFailure(resp);
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      for (const request of data.requests ?? []) {
+        console.log(`${request.id}\t${request.status}\t${request.linkedProjectId ?? '-'}\t${request.reason}`);
+      }
+      return;
+    }
+    case 'show': {
+      const id = positionalArgs(rest, stringFlags)[0];
+      if (!id) {
+        console.error('Usage: od design-systems requests show <id>');
+        process.exit(2);
+      }
+      const resp = await fetch(`${base}/api/design-system-requests/${encodeURIComponent(id)}`);
+      if (!resp.ok) return structuredHttpFailure(resp);
+      const data = await resp.json();
+      process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return;
+    }
+    case 'create': {
+      if (typeof flags.reason !== 'string' || !flags.reason.trim()) {
+        console.error('Usage: od design-systems requests create --reason <text> [--project <id>]');
+        process.exit(2);
+      }
+      const body = {
+        source: typeof flags.source === 'string' ? flags.source : 'cli',
+        requester: typeof flags.requester === 'string' ? flags.requester : 'cli',
+        reason: flags.reason,
+        linkedProjectId: typeof flags.project === 'string' ? flags.project : null,
+        temporaryMode: true,
+        projectContext: typeof flags.project === 'string' ? { projectId: flags.project } : undefined,
+      };
+      const endpoint = typeof flags.project === 'string'
+        ? `/api/projects/${encodeURIComponent(flags.project)}/design-system-request`
+        : '/api/design-system-requests';
+      const resp = await fetch(`${base}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) return structuredHttpFailure(resp);
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      const request = data.request ?? data;
+      console.log(`Created ${request.id}\t${request.status}`);
+      return;
+    }
+    case 'update': {
+      const id = positionalArgs(rest, stringFlags)[0];
+      if (!id || typeof flags.status !== 'string') {
+        console.error('Usage: od design-systems requests update <id> --status <status>');
+        process.exit(2);
+      }
+      const resp = await fetch(`${base}/api/design-system-requests/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: flags.status,
+          resolutionNote: typeof flags.notes === 'string' ? flags.notes : undefined,
+          resolvedDesignSystemId: typeof flags['resolved-design-system'] === 'string'
+            ? flags['resolved-design-system']
+            : undefined,
+          statusUpdatedBy: 'cli',
+        }),
+      });
+      if (!resp.ok) return structuredHttpFailure(resp);
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      const request = data.request ?? data;
+      console.log(`Updated ${request.id}\t${request.status}`);
+      return;
+    }
+    default:
+      console.error(`unknown subcommand: od design-systems requests ${sub}`);
+      process.exit(2);
+  }
 }
 
 // od design-systems import-local <path> [--name <name>]

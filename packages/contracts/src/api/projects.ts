@@ -170,6 +170,21 @@ export interface ProjectMetadata {
   // Stored on design-system projects so the review overview can remember
   // which generated sections were accepted or sent back for another pass.
   designSystemReview?: Record<string, DesignSystemReviewEntry>;
+  /** Approved-governance state for general project pickers. */
+  designSystemMode?: 'approved' | 'temporary-none' | 'unavailable';
+  /** Linked DesignOps request when a user continues without a matching approved system. */
+  designSystemRequest?: {
+    id: string;
+    status: string;
+    reason: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  /** Short UI summary for projects intentionally continuing without a design system. */
+  temporaryDesignSystem?: {
+    reason?: string;
+    createdAt?: string;
+  };
 }
 
 export interface Project {
@@ -242,6 +257,7 @@ export interface CreateProjectRequest {
   designSystemId?: string | null;
   pendingPrompt?: string;
   metadata?: ProjectMetadata;
+  designSystemRequest?: import('./registry.js').DesignSystemRequestCreateRequest;
   pluginId?: string;
   appliedPluginSnapshotId?: string;
   pluginInputs?: Record<string, unknown>;

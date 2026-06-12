@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/server.js';
 
 describe('project design system route gates', () => {
-  let server: http.Server;
+  let server: http.Server | null = null;
   let baseUrl: string;
   const projectsToClean: string[] = [];
   const designSystemsToClean: string[] = [];
@@ -22,7 +22,7 @@ describe('project design system route gates', () => {
     };
     baseUrl = started.url;
     server = started.server;
-  });
+  }, 30_000);
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
@@ -41,8 +41,8 @@ describe('project design system route gates', () => {
         method: 'DELETE',
       }).catch(() => {});
     }
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
+    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+  }, 30_000);
 
   function uniqueId(prefix: string): string {
     return `${prefix}-${randomUUID()}`;
@@ -323,4 +323,127 @@ describe('project design system route gates', () => {
     const body = (await resp.json()) as { error?: { message?: string } };
     expect(body.error?.message).toMatch(/draft design systems cannot be used/i);
   });
+  it('filters general design-system catalog to approved systems', async () => {
+    const draft = await createUserDesignSystem('draft');
+    const published = await createUserDesignSystem('published');
+
+    const resp = await fetch(`${baseUrl}/api/design-systems?visibility=approved`);
+
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as { designSystems: Array<{ id: string }> };
+    const ids = body.designSystems.map((system) => system.id);
+    expect(ids).toContain(published.id);
+    expect(ids).not.toContain(draft.id);
+  });
+
+  it('creates a request-backed temporary project atomically', async () => {
+    const id = uniqueId('project-ds-request');
+
+    const resp = await createProject({
+      id,
+      name: 'Request Backed Project',
+      designSystemId: null,
+      metadata: { kind: 'prototype' },
+      designSystemRequest: {
+        source: 'home_new_project',
+        reason: 'No approved brand system matches the internal tool.',
+        temporaryMode: true,
+      },
+    });
+
+    expect(resp.status).toBe(200);
+    projectsToClean.push(id);
+    const body = (await resp.json()) as {
+      project: {
+        designSystemId: string | null;
+        metadata?: {
+          designSystemMode?: string;
+          designSystemRequest?: { id: string; status: string; reason: string };
+        };
+      };
+    };
+    expect(body.project.designSystemId).toBeNull();
+    expect(body.project.metadata?.designSystemMode).toBe('temporary-none');
+    expect(body.project.metadata?.designSystemRequest?.status).toBe('open');
+
+    const requestResp = await fetch(
+      `${baseUrl}/api/design-system-requests/${encodeURIComponent(body.project.metadata!.designSystemRequest!.id)}`,
+    );
+    expect(requestResp.status).toBe(200);
+    const requestBody = (await requestResp.json()) as { request: { linkedProjectId?: string | null } };
+    expect(requestBody.request.linkedProjectId).toBe(id);
+  });
+
+  it('links a no-fit request to an existing project atomically', async () => {
+    const id = uniqueId('project-ds-existing-request');
+    const createResp = await createProject({
+      id,
+      name: 'Existing Request Project',
+      designSystemId: null,
+      metadata: { kind: 'prototype' },
+    });
+    expect(createResp.status).toBe(200);
+    projectsToClean.push(id);
+
+    const resp = await fetch(`${baseUrl}/api/projects/${encodeURIComponent(id)}/design-system-request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Need a specific enterprise brand.', source: 'project_header' }),
+    });
+
+    expect(resp.status).toBe(201);
+    const body = (await resp.json()) as {
+      project: {
+        id: string;
+        designSystemId: string | null;
+        metadata?: { designSystemMode?: string; designSystemRequest?: { id: string; status: string; reason: string } };
+      };
+      request: { id: string; linkedProjectId?: string | null; projectContext?: { projectName?: string } };
+    };
+    expect(body.project.designSystemId).toBeNull();
+    expect(body.project.metadata?.designSystemMode).toBe('temporary-none');
+    expect(body.project.metadata?.designSystemRequest?.id).toBe(body.request.id);
+    expect(body.request.linkedProjectId).toBe(id);
+    expect(body.request.projectContext?.projectName).toBe('Existing Request Project');
+  });
+
+  it('blocks publishing until readiness review gates pass', async () => {
+    const draft = await createUserDesignSystem('draft');
+
+    const blocked = await fetch(`${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'published' }),
+    });
+
+    expect(blocked.status).toBe(400);
+    const blockedBody = (await blocked.json()) as { error?: { code?: string } };
+    expect(blockedBody.error?.code).toBe('DESIGN_SYSTEM_PUBLISH_BLOCKED');
+
+    for (const gateId of [
+      'review:designops',
+      'review:brand-fit',
+      'review:token-completeness',
+      'review:component-completeness',
+      'review:accessibility-baseline',
+    ]) {
+      const gateResp = await fetch(`${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/readiness`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gateId, status: 'passed', actor: 'test' }),
+      });
+      expect(gateResp.status).toBe(200);
+    }
+
+    const published = await fetch(`${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'published' }),
+    });
+
+    expect(published.status).toBe(200);
+    const body = (await published.json()) as { designSystem: { status: string } };
+    expect(body.designSystem.status).toBe('published');
+  });
+
 });

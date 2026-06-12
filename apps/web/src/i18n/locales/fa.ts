@@ -3090,4 +3090,22 @@ export const fa: Dict = {
   'mcpClient.notForwardedToLabel': 'ارسال‌نشده به:',
   'mcpClient.forwardedAcpNote': 'آداپتورهای ACP که با stdio علامت‌گذاری شده‌اند فقط سرورهای MCP از نوع stdio را از این فهرست دریافت می‌کنند؛ ورودی‌های HTTP و SSE هنگام راه‌اندازی حذف می‌شوند.',
   'mcpClient.notForwardedNote': 'برای آن Agentها، سرورهای MCP را در فایل پیکربندی خودِ Agent تنظیم کنید (مثلاً ~/.codex/config.toml، ~/.gemini/settings.json)؛ سرورهای زیر در آن‌جا بی‌سروصدا بلااستفاده می‌مانند.',
+  // Design-system governance
+  'newproj.dsRequestShow': 'Request a design system instead',
+  'newproj.dsRequestHide': 'Hide request form',
+  'newproj.dsRequestReasonLabel': 'What kind of design system do you need?',
+  'newproj.dsRequestReasonPlaceholder': 'Tell DesignOps what project context or brand fit is missing.',
+  'newproj.dsRequestContinue': 'Request and continue without one',
+  'designSystemPicker.requestShow': 'Request fit',
+  'designSystemPicker.requestHide': 'Hide request',
+  'designSystemPicker.requestPlaceholder': 'What approved system is missing for this project?',
+  'designSystemPicker.requestContinue': 'Request and continue',
+  'designSystemPicker.requestFailed': 'Could not create the design-system request.',
+  'designSystemPicker.temporaryRequestStatus': 'Temporary · request {status}',
+  'settings.designSystemRequestsTitle': 'DesignOps requests',
+  'settings.designSystemRequestsEmpty': 'No design-system requests yet.',
+  'settings.designSystemReadinessReady': 'Readiness: ready to publish',
+  'settings.designSystemReadinessBlocked': 'Readiness: {count} blocker(s)',
+  'settings.designSystemReadinessApprove': 'Mark review gates passed',
+
 };

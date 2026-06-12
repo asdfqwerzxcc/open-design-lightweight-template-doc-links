@@ -6,6 +6,14 @@ import type {
   ConnectorDetailResponse,
   ConnectorListResponse,
   ConnectorStatusResponse,
+  DesignSystemReadinessResponse,
+  DesignSystemReadinessState,
+  DesignSystemReadinessUpdateRequest,
+  DesignSystemRequestCreateRequest,
+  DesignSystemRequestItem,
+  DesignSystemRequestResponse,
+  DesignSystemRequestsResponse,
+  DesignSystemRequestUpdateRequest,
   DesignSystemStaticHtmlExportRequest,
   DesignSystemStaticHtmlExportResponse,
   PromoteProjectToDesignSystemRequest,
@@ -469,14 +477,115 @@ export type DesignSystemsResult =
   | { ok: true; designSystems: DesignSystemSummary[] }
   | { ok: false };
 
-export async function fetchDesignSystemsResult(): Promise<DesignSystemsResult> {
+export async function fetchDesignSystemsResult(
+  visibility: 'all' | 'approved' = 'all',
+): Promise<DesignSystemsResult> {
   try {
-    const resp = await fetch('/api/design-systems');
+    const query = visibility === 'approved' ? '?visibility=approved' : '';
+    const resp = await fetch(`/api/design-systems${query}`);
     if (!resp.ok) return { ok: false };
     const json = (await resp.json()) as { designSystems?: DesignSystemSummary[] };
     return { ok: true, designSystems: json.designSystems ?? [] };
   } catch {
     return { ok: false };
+  }
+}
+
+export async function fetchApprovedDesignSystems(): Promise<DesignSystemSummary[]> {
+  const result = await fetchDesignSystemsResult('approved');
+  return result.ok ? result.designSystems : [];
+}
+
+export async function fetchDesignSystemRequests(status?: string): Promise<DesignSystemRequestItem[]> {
+  try {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const resp = await fetch(`/api/design-system-requests${query}`);
+    if (!resp.ok) return [];
+    const json = (await resp.json()) as DesignSystemRequestsResponse;
+    return json.requests ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createDesignSystemRequest(
+  input: DesignSystemRequestCreateRequest,
+): Promise<DesignSystemRequestItem | null> {
+  try {
+    const resp = await fetch('/api/design-system-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as DesignSystemRequestResponse;
+    return json.request ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateDesignSystemRequest(
+  id: string,
+  input: DesignSystemRequestUpdateRequest,
+): Promise<DesignSystemRequestItem | null> {
+  try {
+    const resp = await fetch(`/api/design-system-requests/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as DesignSystemRequestResponse;
+    return json.request ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function createProjectDesignSystemRequest(
+  projectId: string,
+  input: DesignSystemRequestCreateRequest,
+): Promise<{ project: Project; request: DesignSystemRequestItem } | null> {
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/design-system-request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as { project: Project; request: DesignSystemRequestItem };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchDesignSystemReadiness(id: string): Promise<DesignSystemReadinessState | null> {
+  try {
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/readiness`);
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as DesignSystemReadinessResponse;
+    return json.readiness ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateDesignSystemReadiness(
+  id: string,
+  input: DesignSystemReadinessUpdateRequest,
+): Promise<DesignSystemReadinessState | null> {
+  try {
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/readiness`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!resp.ok) return null;
+    const json = (await resp.json()) as DesignSystemReadinessResponse;
+    return json.readiness ?? null;
+  } catch {
+    return null;
   }
 }
 

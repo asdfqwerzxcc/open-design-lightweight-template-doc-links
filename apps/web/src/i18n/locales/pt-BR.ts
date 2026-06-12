@@ -3090,4 +3090,22 @@ export const ptBR: Dict = {
   'mcpClient.notForwardedToLabel': 'Não encaminhado para:',
   'mcpClient.forwardedAcpNote': 'Adaptadores ACP marcados como stdio recebem apenas servidores MCP stdio desta lista; entradas HTTP e SSE são descartadas no momento da inicialização.',
   'mcpClient.notForwardedNote': 'Para esses agentes, configure os servidores MCP no próprio arquivo de configuração do agente (ex.: ~/.codex/config.toml, ~/.gemini/settings.json); os servidores abaixo ficam sem uso silenciosamente nesse caso.',
+  // Design-system governance
+  'newproj.dsRequestShow': 'Request a design system instead',
+  'newproj.dsRequestHide': 'Hide request form',
+  'newproj.dsRequestReasonLabel': 'What kind of design system do you need?',
+  'newproj.dsRequestReasonPlaceholder': 'Tell DesignOps what project context or brand fit is missing.',
+  'newproj.dsRequestContinue': 'Request and continue without one',
+  'designSystemPicker.requestShow': 'Request fit',
+  'designSystemPicker.requestHide': 'Hide request',
+  'designSystemPicker.requestPlaceholder': 'What approved system is missing for this project?',
+  'designSystemPicker.requestContinue': 'Request and continue',
+  'designSystemPicker.requestFailed': 'Could not create the design-system request.',
+  'designSystemPicker.temporaryRequestStatus': 'Temporary · request {status}',
+  'settings.designSystemRequestsTitle': 'DesignOps requests',
+  'settings.designSystemRequestsEmpty': 'No design-system requests yet.',
+  'settings.designSystemReadinessReady': 'Readiness: ready to publish',
+  'settings.designSystemReadinessBlocked': 'Readiness: {count} blocker(s)',
+  'settings.designSystemReadinessApprove': 'Mark review gates passed',
+
 };

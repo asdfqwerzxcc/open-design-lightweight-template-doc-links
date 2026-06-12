@@ -48,6 +48,7 @@ import {
   fetchAppVersionInfo,
   fetchAgentsStream,
   fetchDesignSystems,
+  fetchApprovedDesignSystems,
   fetchDesignTemplates,
   fetchPromptTemplates,
   fetchSkills,
@@ -380,6 +381,7 @@ function AppInner() {
   // EntryView Templates tab. See specs/current/skills-and-design-templates.md.
   const [designTemplates, setDesignTemplates] = useState<SkillSummary[]>([]);
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
+  const [approvedDesignSystems, setApprovedDesignSystems] = useState<DesignSystemSummary[]>([]);
   const [pendingDesignSystemRevisionJobs, setPendingDesignSystemRevisionJobs] = useState<
     Record<string, DesignSystemGenerationJob>
   >({});
@@ -831,9 +833,10 @@ function AppInner() {
         maybeClearLoading();
       });
 
-      void fetchDesignSystems().then((list) => {
+      void Promise.all([fetchDesignSystems(), fetchApprovedDesignSystems()]).then(([allSystems, approvedSystems]) => {
         if (cancelled) return;
-        setDesignSystems(list);
+        setDesignSystems(allSystems);
+        setApprovedDesignSystems(approvedSystems);
         setDsLoading(false);
       });
 
@@ -979,9 +982,9 @@ function AppInner() {
   useEffect(() => {
     if (!daemonConfigLoaded || dsLoading) return;
     if (config.designSystemId) return;
-    if (designSystems.length === 0) return;
+    if (approvedDesignSystems.length === 0) return;
     const id =
-      designSystems.find((d) => d.id === 'default')?.id ?? designSystems[0]!.id;
+      approvedDesignSystems.find((d) => d.id === 'default')?.id ?? approvedDesignSystems[0]!.id;
     setConfig((prev) => {
       if (prev.designSystemId) return prev;
       const next: AppConfig = { ...prev, designSystemId: id };
@@ -989,7 +992,7 @@ function AppInner() {
       void syncConfigToDaemon(next);
       return next;
     });
-  }, [daemonConfigLoaded, dsLoading, designSystems, config.designSystemId]);
+  }, [daemonConfigLoaded, dsLoading, approvedDesignSystems, config.designSystemId]);
 
   // One-shot self-healing migration for pets adopted before the
   // overlay learned atlas-row switching. If the stored pet is a
@@ -1026,8 +1029,12 @@ function AppInner() {
   }, [beginProjectListRequest, reconcileFetchedProjects]);
 
   const refreshDesignSystems = useCallback(async () => {
-    const list = await fetchDesignSystems();
-    setDesignSystems(list);
+    const [allSystems, approvedSystems] = await Promise.all([
+      fetchDesignSystems(),
+      fetchApprovedDesignSystems(),
+    ]);
+    setDesignSystems(allSystems);
+    setApprovedDesignSystems(approvedSystems);
   }, []);
 
   const refreshSkills = useCallback(async () => {
@@ -1286,6 +1293,7 @@ function AppInner() {
         requestId?: string;
         pendingFiles?: File[];
         userWorkingDirToken?: string;
+        designSystemRequest?: import('@open-design/contracts').DesignSystemRequestCreateRequest;
       },
     ): Promise<boolean> => {
       // Honor an explicit `null` design system — the create panel defaults
@@ -1306,6 +1314,7 @@ function AppInner() {
         designSystemId: input.designSystemId,
         pendingPrompt: derivedPendingPrompt,
         metadata: input.metadata,
+        ...(input.designSystemRequest ? { designSystemRequest: input.designSystemRequest } : {}),
         ...(input.conversationMode ? { conversationMode: input.conversationMode } : {}),
         ...(input.pluginId ? { pluginId: input.pluginId } : {}),
         ...(input.appliedPluginSnapshotId
@@ -1705,7 +1714,10 @@ function AppInner() {
 
   const handleDesignSystemsChanged = useCallback(
     (affectedDesignSystemId?: string) => {
-      void fetchDesignSystems().then((list) => setDesignSystems(list));
+      void Promise.all([fetchDesignSystems(), fetchApprovedDesignSystems()]).then(([allSystems, approvedSystems]) => {
+        setDesignSystems(allSystems);
+        setApprovedDesignSystems(approvedSystems);
+      });
       iframeKeepAlivePool.evictMatching(
         (entry) => {
           const proj = projectsRef.current.find((p) => p.id === entry.projectId);
@@ -1955,10 +1967,10 @@ function AppInner() {
   );
   const enabledDS = useMemo(
     () =>
-      designSystems.filter(
+      approvedDesignSystems.filter(
         (d) => !(config.disabledDesignSystems ?? []).includes(d.id),
       ),
-    [designSystems, config.disabledDesignSystems],
+    [approvedDesignSystems, config.disabledDesignSystems],
   );
 
   // Phase 2B / spec §11.6 — marketplace deep UI dispatch. The
@@ -2023,7 +2035,7 @@ function AppInner() {
         agents={agents}
         skills={enabledFunctionalSkills}
         designTemplates={designTemplates}
-        designSystems={designSystems}
+        designSystems={approvedDesignSystems}
         daemonLive={daemonLive}
         onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}

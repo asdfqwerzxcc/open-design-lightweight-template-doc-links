@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createTabToTracking } from '@open-design/contracts/analytics';
 import { isOpenDesignHostAvailable, pickHostWorkingDir } from '@open-design/host';
 import type { OpenDesignHostProjectImportSuccess } from '@open-design/host';
+import { Button } from '@open-design/components';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackDesignSystemApplyResult,
@@ -9,7 +10,7 @@ import {
   trackNewProjectModalSurfaceView,
   trackNewProjectModalTabClick,
 } from '../analytics/events';
-import type { ConnectorDetail } from '@open-design/contracts';
+import type { ConnectorDetail, DesignSystemRequestCreateRequest } from '@open-design/contracts';
 import type {
   TrackingDesignSystemApplyTargetKind,
   TrackingDesignSystemOrigin,
@@ -58,6 +59,7 @@ import { Icon } from './Icon';
 import { Skeleton } from './Loading';
 import { Toast } from './Toast';
 import { useOpenFolderImport } from './useOpenFolderImport';
+import { approvedDesignSystemCandidates, buildDesignSystemRequestInput, temporaryDesignSystemMetadata } from './design-system-request-primitive';
 
 // Snapshot of a curated prompt template, captured at New Project time and
 // folded into ProjectMetadata.promptTemplate. The user may have edited the
@@ -118,6 +120,7 @@ export interface CreateInput {
   skillId: string | null;
   designSystemId: string | null;
   metadata: ProjectMetadata;
+  designSystemRequest?: DesignSystemRequestCreateRequest;
   userWorkingDirToken?: string;
 }
 
@@ -308,18 +311,24 @@ export function NewProjectPanel({
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [tabScroll, setTabScroll] = useState({ left: false, right: false });
   const [name, setName] = useState('');
+  const approvedDesignSystems = useMemo(
+    () => approvedDesignSystemCandidates(designSystems),
+    [designSystems],
+  );
   // Design-system selection is now an *array* internally so the same
   // component can drive both single-select and multi-select modes without
   // duplicating state. Single-select coerces to length 0/1.
   const initialDefaultDsSelection = useMemo(
-    () => defaultDesignSystemSelection(defaultDesignSystemId, designSystems),
-    [defaultDesignSystemId, designSystems],
+    () => defaultDesignSystemSelection(defaultDesignSystemId, approvedDesignSystems),
+    [defaultDesignSystemId, approvedDesignSystems],
   );
   const [selectedDsIds, setSelectedDsIds] = useState<string[]>(
     () => initialDefaultDsSelection,
   );
   const [dsSelectionTouched, setDsSelectionTouched] = useState(false);
   const [dsMulti, setDsMulti] = useState(false);
+  const [dsRequestOpen, setDsRequestOpen] = useState(false);
+  const [dsRequestReason, setDsRequestReason] = useState('');
 
   // Per-tab metadata. Tracked independently so switching tabs preserves
   // each tab's pick rather than resetting to defaults.
@@ -411,7 +420,7 @@ export function NewProjectPanel({
     if (!primary) return;
     if (autoSelectFiredForRef.current === primary) return;
     autoSelectFiredForRef.current = primary;
-    const picked = designSystems.find((d) => d.id === primary);
+    const picked = approvedDesignSystems.find((d) => d.id === primary);
     trackDesignSystemApplyResult(analytics.track, {
       page_name: 'home',
       area: 'design_system_picker',
@@ -425,12 +434,12 @@ export function NewProjectPanel({
       design_system_selection_mode: 'default',
       is_default: true,
       is_auto_selected: true,
-      available_design_system_count: designSystems.length,
+      available_design_system_count: approvedDesignSystems.length,
       duration_ms: 0,
     });
   }, [
     analytics.track,
-    designSystems,
+    approvedDesignSystems,
     dsSelectionTouched,
     initialDefaultDsSelection,
     showDesignSystemPicker,
@@ -598,13 +607,13 @@ export function NewProjectPanel({
         design_system_selection_mode: 'none',
         is_default: false,
         is_auto_selected: false,
-        available_design_system_count: designSystems.length,
+        available_design_system_count: approvedDesignSystems.length,
         duration_ms: 0,
       });
       return;
     }
     if (!nextPrimary) return;
-    const picked = designSystems.find((d) => d.id === nextPrimary);
+    const picked = approvedDesignSystems.find((d) => d.id === nextPrimary);
     const isDefault = nextPrimary === defaultDesignSystemId;
     trackDesignSystemApplyResult(analytics.track, {
       page_name: 'home',
@@ -623,7 +632,7 @@ export function NewProjectPanel({
       // rather than by the user. Once `dsSelectionTouched` is set we
       // know any subsequent change came from a click.
       is_auto_selected: false,
-      available_design_system_count: designSystems.length,
+      available_design_system_count: approvedDesignSystems.length,
       duration_ms: 0,
     });
   }
@@ -715,6 +724,56 @@ export function NewProjectPanel({
         nameSource: trimmedName ? 'user' : 'generated',
         ...(workingDir ? { userWorkingDir: workingDir } : {}),
       },
+      ...(workingDirToken ? { userWorkingDirToken: workingDirToken } : {}),
+      requestId,
+    });
+  }
+
+  function handleRequestAndCreate() {
+    if (!canCreate || !showDesignSystemPicker || !dsRequestReason.trim()) return;
+    const promptTemplatePick = null;
+    const trimmedName = name.trim();
+    const metadata = buildMetadata({
+      tab,
+      mediaSurface,
+      fidelity,
+      platformTargets,
+      includeLandingPage,
+      includeOsWidgets,
+      speakerNotes,
+      animations,
+      templateId,
+      templates,
+      imageModel,
+      imageAspect,
+      videoModel,
+      videoAspect,
+      videoLength,
+      audioKind,
+      audioModel,
+      audioDuration,
+      voice,
+      inspirationIds: [],
+      promptTemplate: promptTemplatePick,
+    });
+    const requestId = analytics.newRequestId();
+    onCreate({
+      name: trimmedName || autoName(tab, mediaSurface, t),
+      skillId: skillIdForTab,
+      designSystemId: null,
+      metadata: {
+        ...metadata,
+        nameSource: trimmedName ? 'user' : 'generated',
+        ...temporaryDesignSystemMetadata(dsRequestReason),
+        ...(workingDir ? { userWorkingDir: workingDir } : {}),
+      },
+      designSystemRequest: buildDesignSystemRequestInput({
+        mode: 'home-multi',
+        source: 'home_new_project',
+        reason: dsRequestReason,
+        projectName: trimmedName || autoName(tab, mediaSurface, t),
+        kind: metadata.kind,
+      }),
       ...(workingDirToken ? { userWorkingDirToken: workingDirToken } : {}),
       requestId,
     });
@@ -879,7 +938,7 @@ export function NewProjectPanel({
 
         {showDesignSystemPicker ? (
           <DesignSystemPicker
-            designSystems={designSystems}
+            designSystems={approvedDesignSystems}
             defaultDesignSystemId={defaultDesignSystemId}
             selectedIds={selectedDsIds}
             multi={dsMulti}
@@ -887,6 +946,40 @@ export function NewProjectPanel({
             onChange={handleDesignSystemChange}
             loading={loading}
           />
+        ) : null}
+        {showDesignSystemPicker ? (
+          <div className="newproj-ds-request">
+            <Button
+              variant="ghost"
+              className="newproj-ds-request-toggle"
+              onClick={() => setDsRequestOpen((value) => !value)}
+            >
+              {dsRequestOpen ? t('newproj.dsRequestHide') : t('newproj.dsRequestShow')}
+            </Button>
+            {dsRequestOpen ? (
+              <div className="newproj-ds-request-panel">
+                <label className="newproj-label" htmlFor="newproj-ds-request-reason">
+                  {t('newproj.dsRequestReasonLabel')}
+                </label>
+                <textarea
+                  id="newproj-ds-request-reason"
+                  className="newproj-ds-request-textarea"
+                  value={dsRequestReason}
+                  onChange={(event) => setDsRequestReason(event.target.value)}
+                  placeholder={t('newproj.dsRequestReasonPlaceholder')}
+                  rows={3}
+                />
+                <Button
+                  variant="primary-ghost"
+                  className="newproj-ds-request-submit"
+                  onClick={handleRequestAndCreate}
+                  disabled={!canCreate || !dsRequestReason.trim()}
+                >
+                  {t('newproj.dsRequestContinue')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {tab === 'media' ? (

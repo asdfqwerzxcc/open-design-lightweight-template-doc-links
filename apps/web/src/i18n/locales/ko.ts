@@ -3090,4 +3090,22 @@ export const ko: Dict = {
   'mcpClient.notForwardedToLabel': '전달되지 않는 대상:',
   'mcpClient.forwardedAcpNote': 'stdio로 표시된 ACP 어댑터는 이 목록에서 stdio MCP 서버만 받습니다. HTTP 및 SSE 항목은 생성 시점에 제외됩니다.',
   'mcpClient.notForwardedNote': '해당 Agent의 경우 Agent 자체 구성 파일(예: ~/.codex/config.toml, ~/.gemini/settings.json)에서 MCP 서버를 구성하세요. 아래 서버는 거기서 자동으로 사용되지 않습니다.',
+  // Design-system governance
+  'newproj.dsRequestShow': 'Request a design system instead',
+  'newproj.dsRequestHide': 'Hide request form',
+  'newproj.dsRequestReasonLabel': 'What kind of design system do you need?',
+  'newproj.dsRequestReasonPlaceholder': 'Tell DesignOps what project context or brand fit is missing.',
+  'newproj.dsRequestContinue': 'Request and continue without one',
+  'designSystemPicker.requestShow': 'Request fit',
+  'designSystemPicker.requestHide': 'Hide request',
+  'designSystemPicker.requestPlaceholder': 'What approved system is missing for this project?',
+  'designSystemPicker.requestContinue': 'Request and continue',
+  'designSystemPicker.requestFailed': 'Could not create the design-system request.',
+  'designSystemPicker.temporaryRequestStatus': 'Temporary · request {status}',
+  'settings.designSystemRequestsTitle': 'DesignOps requests',
+  'settings.designSystemRequestsEmpty': 'No design-system requests yet.',
+  'settings.designSystemReadinessReady': 'Readiness: ready to publish',
+  'settings.designSystemReadinessBlocked': 'Readiness: {count} blocker(s)',
+  'settings.designSystemReadinessApprove': 'Mark review gates passed',
+
 };
